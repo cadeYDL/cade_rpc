@@ -1,8 +1,18 @@
 package org.cade.rpc.comsumer;
 
-public class ConsuerApp {
+import org.cade.rpc.api.Add;
+import org.cade.rpc.register.RegistryConfig;
+import org.cade.rpc.register.impl.ZookeeperServiceRegister;
+
+public class ConsuerApp  {
     public static void main(String[] args) throws Exception {
-        Consumer consumer = new Consumer();
-        System.out.println(consumer.add(1,2));
+        ConsumerProperties properties = new ConsumerProperties();
+        properties.getRegistryConfig().setRegistryType("zookeeper");
+        properties.getRegistryConfig().setConnectString("192.168.139.120:2181");
+        ConsumerProxyFactory factory = new ConsumerProxyFactory(properties);
+        Add addConsumer = factory.getConsumerProxy(Add.class);
+        System.out.println(addConsumer.add(12,2));
+        System.out.println(addConsumer.mul(10,2));
     }
+
 }
