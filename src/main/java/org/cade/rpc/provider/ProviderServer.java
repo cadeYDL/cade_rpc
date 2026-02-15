@@ -7,22 +7,37 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.string.StringEncoder;
+import lombok.extern.slf4j.Slf4j;
 import org.cade.rpc.codec.MsgDecoder;
 import org.cade.rpc.message.Request;
 import org.cade.rpc.codec.ResponseEncoder;
 import org.cade.rpc.message.Response;
+import org.cade.rpc.register.DefaultServiceRegister;
+import org.cade.rpc.register.Metadata;
+import org.cade.rpc.register.ServiceRegister;
 
-
+@Slf4j(topic = "provider")
 public class ProviderServer {
-    private final int port;
+
     private final NioEventLoopGroup connNioEventLoopGroup =   new NioEventLoopGroup();
     private final NioEventLoopGroup workerNioEventLoopGroup =   new NioEventLoopGroup(4);
-    public ProviderServer(int port) {
-        this.port = port;
+    private final ServiceRegister serviceRegister;
+    private final ProviderRegistry registry;
+    private final ProviderProperties properties;
+
+    public <I> void register(Class<I> interfaceClass,I serviceInstance){
+        registry.register(interfaceClass,serviceInstance);
+    }
+
+
+    public ProviderServer(ProviderProperties properties) throws Exception {
+        this.properties = properties;
+        registry = new ProviderRegistry();
+        this.serviceRegister = new DefaultServiceRegister(properties.getRegistryConfig());
     }
 
     public void start(){
+
         ServerBootstrap serverBootstrap = new ServerBootstrap();
         serverBootstrap.group(connNioEventLoopGroup, workerNioEventLoopGroup)
                 .channel(NioServerSocketChannel.class)
@@ -30,19 +45,12 @@ public class ProviderServer {
                     @Override
                     protected void initChannel(NioSocketChannel nioSocketChannel) throws Exception {
                         nioSocketChannel.pipeline().addLast(new MsgDecoder()).addLast(new ResponseEncoder())
-                                .addLast(new SimpleChannelInboundHandler<Request>() {
-                                    @Override
-                                    protected void channelRead0(ChannelHandlerContext channelHandlerContext, Request request) throws Exception {
-                                        System.out.println(request);
-                                        Response resp = new Response();
-                                        resp.setResult(1);
-                                        channelHandlerContext.writeAndFlush(resp);
-                                    }
-                                });
+                                .addLast(new ProviderHandler());
                     }
                 });
         try {
-            serverBootstrap.bind(this.port).sync();
+            serverBootstrap.bind(this.properties.getPort()).sync();
+            registry.allServiceNames().stream().map(this::buildMetadata).forEach(serviceRegister::register);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
@@ -57,11 +65,47 @@ public class ProviderServer {
         }
     }
 
-    public static void main(String[] args) throws Exception {
-
+    private Metadata buildMetadata(String serviceName){
+        Metadata metadata = new Metadata();
+        metadata.setHost(properties.getHost());
+        metadata.setPort(properties.getPort());
+        metadata.setServiceName(serviceName);
+        return metadata;
     }
 
-    private static int add(int a, int b) {
-        return a + b;
+    private class ProviderHandler extends SimpleChannelInboundHandler<Request>{
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+            log.error("Exception",cause);
+            ctx.channel().close();
+        }
+
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+            log.info("Client:{} close",ctx.channel().remoteAddress());
+        }
+
+        @Override
+        public void channelActive(ChannelHandlerContext ctx) throws Exception {
+           log.info("New Client:{}",ctx.channel().remoteAddress());
+        }
+
+        @Override
+        protected void channelRead0(ChannelHandlerContext channelHandlerContext, Request request) throws Exception {
+            ProviderRegistry.Invocation service = registry.getService(request.getServiceName());
+            if(service==null){
+                channelHandlerContext.writeAndFlush(Response.error(String.format("No such service %s",request.getServiceName()),request.getRequestID()));
+                return;
+            }
+            try{
+                Object result = service.invoke(request.getMethodName(),request.getParamsType(),request.getParams());
+                log.info("Request:{} result:{}",request,result);
+                channelHandlerContext.writeAndFlush(Response.ok(result,request.getRequestID()));
+            }catch (Exception e){
+                channelHandlerContext.writeAndFlush(Response.error(String.format("Call Function Fail err:%s",e),request.getRequestID()));
+            }
+
+        }
     }
+
 }
