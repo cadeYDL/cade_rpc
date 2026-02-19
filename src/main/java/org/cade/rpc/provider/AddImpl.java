@@ -3,15 +3,11 @@ package org.cade.rpc.provider;
 import org.cade.rpc.api.Add;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 
 public class AddImpl implements Add {
     @Override
     public int add(int a, int b) {
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
         return a+b;
     }
 
