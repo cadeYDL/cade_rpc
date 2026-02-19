@@ -5,6 +5,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.cade.rpc.breaker.CircuitBreaker;
 import org.cade.rpc.breaker.CircuitBreakerManager;
 import org.cade.rpc.excpetion.RPCException;
+import org.cade.rpc.fallback.CacheFallback;
+import org.cade.rpc.fallback.DefaultFallback;
+import org.cade.rpc.fallback.Fallback;
+import org.cade.rpc.fallback.MockFallback;
 import org.cade.rpc.loadbalance.LoadBalancer;
 import org.cade.rpc.loadbalance.RandomLoadBalancer;
 import org.cade.rpc.loadbalance.RoundRobinLoadBalancer;
@@ -35,6 +39,7 @@ public class ConsumerProxyFactory {
     private final ConnectionManager connectionManager;
     private final InflightRequestManager inflightRequestManager;
     private final CircuitBreakerManager circuitBreakerManager;
+    private final Fallback fallback;
 
 
     ConsumerProxyFactory(ConsumerProperties properties) throws Exception {
@@ -44,6 +49,7 @@ public class ConsumerProxyFactory {
         this.circuitBreakerManager = new CircuitBreakerManager(properties);
 
         this.properties = properties;
+        this.fallback = new DefaultFallback(new CacheFallback(),new MockFallback());
     }
 
 
@@ -94,22 +100,32 @@ public class ConsumerProxyFactory {
             if (method.getDeclaringClass() == Object.class) {
                 return invokeObjectMethod(proxy, method, args);
             }
+
             List<Metadata> metadataList = new ArrayList<>(serviceRegister.fetchServicelist(interfaceClass.getName()));
-            Metadata service = dicideProvider(metadataList);
-            Response response;
+            Metadata service = decideProvider(metadataList);
             RPCCallMetrics metrics = RPCCallMetrics.create(service,method,args);
+            if (service==null){
+                return fallback.fallback(metrics);
+            }
+            Response response;
+
             CircuitBreaker breaker = circuitBreakerManager.getCircuitBreaker(service);
             try{
                 CompletableFuture<Response> future = callRPCAsync(metrics.getMethod(),metrics.getArgs(),service);
                 response = future.get(properties.getRequestTimeoutMS(), TimeUnit.MILLISECONDS);
-                metrics.complete();
+                metrics.complete(response);
+                return processResponse(response);
             }catch (Exception e){
                 metrics.complete(e);
-                response = doRetry(metrics, metadataList);
             }finally {
                 breaker.recordRPC(metrics);
+                fallback.recordMetrics(metrics);
             }
-            return processResponse(response);
+            try{
+                return processResponse(doRetry(metrics, metadataList));
+            }catch (Exception e){
+                return fallback.fallback(metrics);
+            }
         }
 
         private CompletableFuture<Response> callRPCAsync(Method method,Object[] args,Metadata provider){
@@ -128,7 +144,7 @@ public class ConsumerProxyFactory {
             return responseFuture;
         }
 
-        private Metadata dicideProvider(List<Metadata> metadataList) throws Exception {
+        private Metadata decideProvider(List<Metadata> metadataList) throws Exception {
             while (!metadataList.isEmpty()){
                 Metadata service = loadBalancer.select(metadataList);
                 CircuitBreaker breaker = circuitBreakerManager.getCircuitBreaker(service);
@@ -137,9 +153,7 @@ public class ConsumerProxyFactory {
                 }
                 metadataList.remove(service);
             }
-            throw new RPCException("can not find service");
-
-
+            return null;
 
         }
 
@@ -174,8 +188,13 @@ public class ConsumerProxyFactory {
                 CompletableFuture<Response> requestFuture = callRPCAsync(metrics.getMethod(), metrics.getArgs(), provider);
                 RPCCallMetrics retryMetrics = RPCCallMetrics.create(provider, metrics.getMethod(), metrics.getArgs());
                 requestFuture.whenComplete((r,e)->{
-                    retryMetrics.complete(e);
+                    if(e!=null){
+                        retryMetrics.complete(e);
+                    }else{
+                        retryMetrics.complete(r);
+                    }
                     breaker.recordRPC(retryMetrics);
+                    fallback.recordMetrics(retryMetrics);
                 });
                 return requestFuture;
             });

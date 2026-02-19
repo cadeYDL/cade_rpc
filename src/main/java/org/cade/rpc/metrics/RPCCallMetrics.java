@@ -1,6 +1,7 @@
 package org.cade.rpc.metrics;
 
 import lombok.Data;
+import org.cade.rpc.message.Response;
 import org.cade.rpc.register.Metadata;
 
 import java.lang.reflect.Method;
@@ -14,6 +15,7 @@ public class RPCCallMetrics {
     private Method method;
     private Metadata provider;
     private Object[] args;
+    private Object result;
 
     private RPCCallMetrics() {
     }
@@ -27,14 +29,14 @@ public class RPCCallMetrics {
         return metrics;
     }
 
-    public void complete() {
+    public void complete(Response result) {
         this.complete = true;
+        this.result = result.getResult();
         this.durationMS = System.currentTimeMillis() - startTime;
 
     }
 
     public void complete(Throwable throwable) {
-        this.complete = true;
         this.throwable = throwable;
         this.durationMS = System.currentTimeMillis() - startTime;
     }

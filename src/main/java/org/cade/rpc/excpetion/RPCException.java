@@ -5,6 +5,10 @@ public class RPCException extends RuntimeException {
         super(message);
     }
 
+    public RPCException(String createMockObjectFail, Exception e) {
+        super(createMockObjectFail, e);
+    }
+
     public boolean retry() {
         return false;
     }
