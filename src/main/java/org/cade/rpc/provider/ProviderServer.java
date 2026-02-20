@@ -26,6 +26,7 @@ import org.cade.rpc.register.ServiceRegister;
 import org.cade.rpc.serialize.Serializer;
 import org.cade.rpc.serialize.SerializerManager;
 
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -215,10 +216,28 @@ public class ProviderServer {
                     Class<?>[] paramsClass = resolveMethodParams(request);
                     Object result = invocation.invoke(request.getMethodName(), paramsClass, resovleMethodParams(request,paramsClass));
                     log.info("Request:{} result:{}", request, result);
-                    eventLoop.execute(() -> ctx.writeAndFlush(Response.ok(result, request.getRequestID())));
+                    Object finnalResult = request.isGenericInvoke()? resovleResult(result):result;
+                    eventLoop.execute(() -> ctx.writeAndFlush(Response.ok(finnalResult, request.getRequestID())));
                 } catch (Exception e) {
                     eventLoop.execute(() -> ctx.writeAndFlush(Response.error(String.format("Call Function Fail err:%s", e), request.getRequestID())));
                 }
+            }
+
+            private Object resovleResult(Object result) {
+                Class<?> rclass= result.getClass();
+                if(rclass==int.class||rclass==float.class||rclass==double.class||rclass==String.class){
+                    return result;
+                }
+                if(rclass==Integer.class||rclass==Float.class||rclass==Double.class){
+                    return result;
+                }
+                if(rclass==short.class||rclass==byte.class||rclass==char.class||rclass==long.class||rclass==boolean.class){
+                    return result;
+                }
+                if(rclass==Short.class||rclass==Byte.class||rclass==Character.class||rclass==Long.class||rclass== Boolean.class){
+                    return result;
+                }
+                return new HashMap<>(JSONObject.from(result));
             }
 
             @SuppressWarnings("all")
@@ -234,7 +253,6 @@ public class ProviderServer {
                         continue;
                     }
                     result[i] = params[i];
-
                 }
                 return result;
             }
@@ -270,6 +288,8 @@ public class ProviderServer {
                         return byte.class;
                     case "short":
                         return short.class;
+                    case "char":
+                        return char.class;
                     default:
                         return Class.forName(classStr);
                 }
