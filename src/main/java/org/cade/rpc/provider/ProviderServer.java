@@ -1,5 +1,6 @@
 package org.cade.rpc.provider;
 
+import com.alibaba.fastjson2.JSONObject;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -26,6 +27,7 @@ import org.cade.rpc.serialize.Serializer;
 import org.cade.rpc.serialize.SerializerManager;
 
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -57,7 +59,7 @@ public class ProviderServer {
         globelLimter = new ConcurrencyLimiter(properties.getGlobelMaxRequest());
         this.serializerManger = new SerializerManager();
         this.compressionManager = new CompressionManager();
-        this.invokeExcutor = new ThreadPoolExecutor(4,4,10,TimeUnit.SECONDS,new ArrayBlockingQueue<>(1024));
+        this.invokeExcutor = new ThreadPoolExecutor(4, 4, 10, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1024));
     }
 
     public void start() {
@@ -190,15 +192,17 @@ public class ProviderServer {
                 ctx.writeAndFlush(Response.error(String.format("No such service %s", request.getServiceName()), request.getRequestID()));
                 return;
             }
-            invokeExcutor.execute(new InvokeTask(request,ctx,service));
+            invokeExcutor.execute(new InvokeTask(request, ctx, service));
 
 
         }
-        private class InvokeTask implements Runnable{
+
+        private class InvokeTask implements Runnable {
             private final Request request;
             private final ChannelHandlerContext ctx;
             private final ProviderRegistry.Invocation invocation;
-            InvokeTask(Request request, ChannelHandlerContext ctx, ProviderRegistry.Invocation service){
+
+            InvokeTask(Request request, ChannelHandlerContext ctx, ProviderRegistry.Invocation service) {
                 this.request = request;
                 this.ctx = ctx;
                 this.invocation = service;
@@ -208,22 +212,77 @@ public class ProviderServer {
             public void run() {
                 EventLoop eventLoop = ctx.channel().eventLoop();
                 try {
-                    Object result = invocation.invoke(request.getMethodName(), request.getParamsType(), request.getParams());
+                    Class<?>[] paramsClass = resolveMethodParams(request);
+                    Object result = invocation.invoke(request.getMethodName(), paramsClass, resovleMethodParams(request,paramsClass));
                     log.info("Request:{} result:{}", request, result);
-                    eventLoop.execute(()->ctx.writeAndFlush(Response.ok(result, request.getRequestID())));
+                    eventLoop.execute(() -> ctx.writeAndFlush(Response.ok(result, request.getRequestID())));
                 } catch (Exception e) {
-                    eventLoop.execute(()->ctx.writeAndFlush(Response.error(String.format("Call Function Fail err:%s", e), request.getRequestID())));
+                    eventLoop.execute(() -> ctx.writeAndFlush(Response.error(String.format("Call Function Fail err:%s", e), request.getRequestID())));
+                }
+            }
+
+            @SuppressWarnings("all")
+            private Object[] resovleMethodParams(Request request, Class<?>[] paramsType) {
+                if (!request.isGenericInvoke()) {
+                    return request.getParams();
+                }
+                Object[] params = request.getParams();
+                Object[] result = new Object[params.length];
+                for (int i = 0; i < params.length; i++) {
+                    if(params[i] instanceof Map<?,?> map){
+                        result[i] = new JSONObject(map).toJavaObject(paramsType[i]);
+                        continue;
+                    }
+                    result[i] = params[i];
+
+                }
+                return result;
+            }
+
+            private Class<?>[] resolveMethodParams(Request request) throws ClassNotFoundException {
+                if (!request.isGenericInvoke()) {
+                    return request.getParamsType();
+                }
+                String[] paramsClassStr = request.getParamsTypeStr();
+                Class<?>[] paramsClass = new Class<?>[paramsClassStr.length];
+                for (int i = 0; i < paramsClassStr.length; i++) {
+                    String classStr = paramsClassStr[i];
+                    paramsClass[i] = analysisFromString(classStr);
+                }
+                return paramsClass;
+            }
+
+            private Class<?> analysisFromString(String classStr) throws ClassNotFoundException {
+                switch (classStr) {
+                    case "int":
+                        return int.class;
+                    case "long":
+                        return long.class;
+                    case "double":
+                        return double.class;
+                    case "float":
+                        return float.class;
+                    case "boolean":
+                        return boolean.class;
+                    case "String":
+                        return String.class;
+                    case "byte":
+                        return byte.class;
+                    case "short":
+                        return short.class;
+                    default:
+                        return Class.forName(classStr);
                 }
             }
         }
 
-        private class FastFailResponseHandler implements RejectedExecutionHandler{
+        private class FastFailResponseHandler implements RejectedExecutionHandler {
 
             @Override
             public void rejectedExecution(Runnable task, ThreadPoolExecutor executor) {
-                if(task instanceof InvokeTask invokeTask){
-                    Response fastFail = Response.error("service busy",invokeTask.request.getRequestID());
-                    invokeTask.ctx.channel().eventLoop().execute(()->invokeTask.ctx.writeAndFlush(fastFail));
+                if (task instanceof InvokeTask invokeTask) {
+                    Response fastFail = Response.error("service busy", invokeTask.request.getRequestID());
+                    invokeTask.ctx.channel().eventLoop().execute(() -> invokeTask.ctx.writeAndFlush(fastFail));
                     return;
                 }
                 throw new RuntimeException("unexpected task");

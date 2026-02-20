@@ -47,17 +47,16 @@ public class ConsumerProxyFactory {
         this.inflightRequestManager = new InflightRequestManager(properties);
         this.retryManager = new RetryManager();
         this.loadBalancerManager = new LoadBalancerManager();
-        this.connectionManager = new ConnectionManager(inflightRequestManager,properties);
+        this.connectionManager = new ConnectionManager(inflightRequestManager, properties);
         this.serviceRegister = new DefaultServiceRegister(properties.getRegistryConfig());
         this.circuitBreakerManager = new CircuitBreakerManager(properties);
 
         this.properties = properties;
-        this.fallback = new DefaultFallback(new CacheFallback(),new MockFallback());
+        this.fallback = new DefaultFallback(new CacheFallback(), new MockFallback());
     }
 
 
-
-    private LoadBalancer createLoadBalancer(){
+    private LoadBalancer createLoadBalancer() {
         LoadBalancer loadBalancer = this.loadBalancerManager.getLoadBalancer(properties.getLoadBalancePolicy());
         if (loadBalancer == null) {
             throw new RPCException("unknown load balance policy: " + properties.getLoadBalancePolicy());
@@ -66,15 +65,14 @@ public class ConsumerProxyFactory {
     }
 
 
-
     public <I> I getConsumerProxy(Class<I> interfaceClass) {
-        return (I) Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(), new Class<?>[]{interfaceClass}, new ConsumerInvocationHandler<>(interfaceClass,createLoadBalancer(),createRetryPolicy(properties.getRetryPolicy())));
+        return (I) Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(), new Class<?>[]{interfaceClass}, new ConsumerInvocationHandler<>(interfaceClass, createLoadBalancer(), createRetryPolicy(properties.getRetryPolicy())));
     }
 
     private RetryPolicy createRetryPolicy(String retryPolicyName) {
         RetryPolicy retryPolicy = this.retryManager.getRetryPolicy(retryPolicyName);
-        if (retryPolicy==null){
-            throw new IllegalArgumentException(properties.getRetryPolicy()+" this retry policy not exist");
+        if (retryPolicy == null) {
+            throw new IllegalArgumentException(properties.getRetryPolicy() + " this retry policy not exist");
         }
         return retryPolicy;
     }
@@ -83,6 +81,7 @@ public class ConsumerProxyFactory {
         private final Class<I> interfaceClass;
         private final LoadBalancer loadBalancer;
         private final RetryPolicy retryPolicy;
+
         ConsumerInvocationHandler(Class<I> interfaceClass, LoadBalancer loadBalancer, RetryPolicy retryPolicy) {
             this.interfaceClass = interfaceClass;
             this.loadBalancer = loadBalancer;
@@ -94,39 +93,42 @@ public class ConsumerProxyFactory {
             if (method.getDeclaringClass() == Object.class) {
                 return invokeObjectMethod(proxy, method, args);
             }
+            boolean genericInvoke = method.getName().equals("$invoke");
+            String serviceName = genericInvoke?args[0].toString() : interfaceClass.getName();
 
-            List<Metadata> metadataList = new ArrayList<>(serviceRegister.fetchServicelist(interfaceClass.getName()));
+
+            List<Metadata> metadataList = new ArrayList<>(serviceRegister.fetchServicelist(serviceName));
             Metadata service = decideProvider(metadataList);
-            RPCCallMetrics metrics = RPCCallMetrics.create(service,method,args);
-            if (service==null){
+            RPCCallMetrics metrics = RPCCallMetrics.create(service, method, args);
+            if (service == null) {
                 return fallback.fallback(metrics);
             }
             Response response;
 
             CircuitBreaker breaker = circuitBreakerManager.getCircuitBreaker(service);
-            try{
-                CompletableFuture<Response> future = callRPCAsync(metrics.getMethod(),metrics.getArgs(),service);
+            try {
+                CompletableFuture<Response> future = callRPCAsync(metrics.getMethod(), metrics.getArgs(), service);
                 response = future.get(properties.getRequestTimeoutMS(), TimeUnit.MILLISECONDS);
                 metrics.complete(response);
                 return processResponse(response);
-            }catch (Exception e){
+            } catch (Exception e) {
                 metrics.complete(e);
-            }finally {
+            } finally {
                 breaker.recordRPC(metrics);
                 fallback.recordMetrics(metrics);
             }
-            try{
+            try {
                 return processResponse(doRetry(metrics, metadataList));
-            }catch (Exception e){
+            } catch (Exception e) {
                 return fallback.fallback(metrics);
             }
         }
 
-        private CompletableFuture<Response> callRPCAsync(Method method,Object[] args,Metadata provider){
-            Request request = buildRequest(method,args);
+        private CompletableFuture<Response> callRPCAsync(Method method, Object[] args, Metadata provider) {
+            Request request = buildRequest(method, args);
             Channel channel = connectionManager.getChannel(provider);
-            CompletableFuture<Response> responseFuture = inflightRequestManager.inFlightRequest(request,properties.getRequestTimeoutMS(),provider);
-            if(channel == null){
+            CompletableFuture<Response> responseFuture = inflightRequestManager.inFlightRequest(request, properties.getRequestTimeoutMS(), provider);
+            if (channel == null) {
                 responseFuture.completeExceptionally(new RPCException("provider connection failed"));
                 return responseFuture;
             }
@@ -139,10 +141,10 @@ public class ConsumerProxyFactory {
         }
 
         private Metadata decideProvider(List<Metadata> metadataList) throws Exception {
-            while (!metadataList.isEmpty()){
+            while (!metadataList.isEmpty()) {
                 Metadata service = loadBalancer.select(metadataList);
                 CircuitBreaker breaker = circuitBreakerManager.getCircuitBreaker(service);
-                if(breaker!=null&&breaker.allowRequest()){
+                if (breaker != null && breaker.allowRequest()) {
                     return service;
                 }
                 metadataList.remove(service);
@@ -152,12 +154,12 @@ public class ConsumerProxyFactory {
         }
 
         private Response doRetry(RPCCallMetrics metrics, List<Metadata> metadataList) throws Exception {
-            if(metrics.getThrowable() instanceof ExecutionException ee && ee.getCause() instanceof RPCException rpcException && !rpcException.retry()){
+            if (metrics.getThrowable() instanceof ExecutionException ee && ee.getCause() instanceof RPCException rpcException && !rpcException.retry()) {
                 throw rpcException;
             }
             Response response;
-            long functionMS = properties.getFunctionTimeoutMS()-metrics.getDurationMS();
-            if (functionMS<=0){
+            long functionMS = properties.getFunctionTimeoutMS() - metrics.getDurationMS();
+            if (functionMS <= 0) {
                 throw new TimeoutException();
             }
             RetryContext retryContext = createRetryContext(metrics, metadataList, functionMS);
@@ -172,19 +174,19 @@ public class ConsumerProxyFactory {
             retryContext.setFunctionTimeoutMS(functionMS);
             retryContext.setLoadBalancer(loadBalancer);
             retryContext.setRequestTimeout(properties.getRequestTimeoutMS());
-            retryContext.setRetry(provider-> {
+            retryContext.setRetry(provider -> {
                 CircuitBreaker breaker = circuitBreakerManager.getCircuitBreaker(metrics.getProvider());
-                if(!breaker.allowRequest()){
+                if (!breaker.allowRequest()) {
                     CompletableFuture<Response> breakFuture = new CompletableFuture<>();
-                    breakFuture.completeExceptionally(new RPCException("provider is break provider:"+provider.toString()));
+                    breakFuture.completeExceptionally(new RPCException("provider is break provider:" + provider.toString()));
                     return breakFuture;
                 }
                 CompletableFuture<Response> requestFuture = callRPCAsync(metrics.getMethod(), metrics.getArgs(), provider);
                 RPCCallMetrics retryMetrics = RPCCallMetrics.create(provider, metrics.getMethod(), metrics.getArgs());
-                requestFuture.whenComplete((r,e)->{
-                    if(e!=null){
+                requestFuture.whenComplete((r, e) -> {
+                    if (e != null) {
                         retryMetrics.complete(e);
-                    }else{
+                    } else {
                         retryMetrics.complete(r);
                     }
                     breaker.recordRPC(retryMetrics);
@@ -203,11 +205,23 @@ public class ConsumerProxyFactory {
         }
 
         private @NonNull Request buildRequest(Method method, Object[] args) {
+            boolean genericInvoke = method.getName().equals("$invoke");
             Request request = new Request();
-            request.setMethodName(method.getName());
-            request.setServiceName(interfaceClass.getName());
-            request.setParamsType(method.getParameterTypes());
-            request.setParams(args);
+
+
+            if (genericInvoke) {
+                request.setGenericInvoke(true);
+                request.setServiceName(args[0].toString());
+                request.setParamsTypeStr((String[]) args[2]);
+                request.setParams((Object[]) args[3]);
+                request.setMethodName(args[1].toString());
+            }else{
+                request.setServiceName(interfaceClass.getName());
+                request.setParamsType(method.getParameterTypes());
+                request.setParams(args);
+                request.setMethodName(method.getName());
+            }
+
             return request;
         }
 
