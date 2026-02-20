@@ -5,12 +5,17 @@ import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.timeout.IdleState;
+import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
 import org.cade.rpc.codec.MsgEncoder;
 import org.cade.rpc.codec.MsgDecoder;
 import org.cade.rpc.compress.Compression;
 import org.cade.rpc.compress.CompressionManager;
+import org.cade.rpc.handler.HeartbeatHandler;
+import org.cade.rpc.handler.TrafficRecordHandler;
 import org.cade.rpc.limit.ConcurrencyLimiter;
 import org.cade.rpc.limit.Limiter;
 import org.cade.rpc.limit.RateLimiter;
@@ -23,6 +28,7 @@ import org.cade.rpc.serialize.Serializer;
 import org.cade.rpc.serialize.SerializerManger;
 
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j(topic = "provider")
@@ -60,8 +66,11 @@ public class ProviderServer {
                     @Override
                     protected void initChannel(NioSocketChannel nioSocketChannel) throws Exception {
                         nioSocketChannel.pipeline()
+                                .addLast(new TrafficRecordHandler())
                                 .addLast(new MsgDecoder())
                                 .addLast(new MsgEncoder())
+                                .addLast(new IdleStateHandler(30, 5, 0, TimeUnit.SECONDS))
+                                .addLast(new HeartbeatHandler())
                                 .addLast(new LimitHandler())
                                 .addLast(new ProviderHandler());
                     }

@@ -11,11 +11,8 @@ public class ConsuerApp  {
         properties.getRegistryConfig().setConnectString("192.168.139.120:2181");
         ConsumerProxyFactory factory = new ConsumerProxyFactory(properties);
         Add addConsumer = factory.getConsumerProxy(Add.class);
-        for (int i = 0; i < 100; i++) {
-            System.out.println(addConsumer.add(12,2));
-            System.out.println(addConsumer.mul(10,2));
-            Thread.sleep(1000);
-        }
+        System.out.println(addConsumer.add(12,2));
+        System.out.println(addConsumer.mul(10,2));
     }
 
 }

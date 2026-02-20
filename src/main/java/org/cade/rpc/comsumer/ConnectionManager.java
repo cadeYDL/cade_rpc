@@ -4,11 +4,14 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.timeout.IdleStateHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.cade.rpc.codec.MsgEncoder;
 import org.cade.rpc.codec.MsgDecoder;
 import org.cade.rpc.compress.Compression;
 import org.cade.rpc.compress.CompressionManager;
+import org.cade.rpc.handler.HeartbeatHandler;
+import org.cade.rpc.handler.TrafficRecordHandler;
 import org.cade.rpc.message.Response;
 import org.cade.rpc.register.Metadata;
 import org.cade.rpc.serialize.Serializer;
@@ -17,6 +20,7 @@ import org.cade.rpc.serialize.SerializerManger;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j(topic = "connection_manager")
 public class ConnectionManager {
@@ -42,8 +46,12 @@ public class ConnectionManager {
         bootstrap.group(nioEventLoopGroup).channel(NioSocketChannel.class).option(ChannelOption.CONNECT_TIMEOUT_MILLIS,properties.getConnectTimeoutMS()).handler(new ChannelInitializer<NioSocketChannel>() {
             @Override
             protected void initChannel(NioSocketChannel nioSocketChannel) throws Exception {
-                nioSocketChannel.pipeline().addLast(new MsgDecoder())
+                nioSocketChannel.pipeline()
+                        .addLast(new TrafficRecordHandler())
+                        .addLast(new MsgDecoder())
                         .addLast(new MsgEncoder())
+                        .addLast(new IdleStateHandler(30, 5, 0, TimeUnit.SECONDS))
+                        .addLast(new HeartbeatHandler())
                         .addLast(new ConsumerHnadler());
             }
         });
