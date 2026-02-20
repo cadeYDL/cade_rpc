@@ -5,8 +5,6 @@ import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.timeout.IdleState;
-import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +12,7 @@ import org.cade.rpc.codec.MsgEncoder;
 import org.cade.rpc.codec.MsgDecoder;
 import org.cade.rpc.compress.Compression;
 import org.cade.rpc.compress.CompressionManager;
+import org.cade.rpc.excpetion.RPCException;
 import org.cade.rpc.handler.HeartbeatHandler;
 import org.cade.rpc.handler.TrafficRecordHandler;
 import org.cade.rpc.limit.ConcurrencyLimiter;
@@ -28,6 +27,9 @@ import org.cade.rpc.serialize.Serializer;
 import org.cade.rpc.serialize.SerializerManger;
 
 import java.util.Locale;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RejectedExecutionHandler;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -42,6 +44,7 @@ public class ProviderServer {
     private final Limiter globelLimter;
     private final SerializerManger serializerManger;
     private final CompressionManager compressionManager;
+    private final ThreadPoolExecutor invokeExcutor;
 
     public <I> void register(Class<I> interfaceClass, I serviceInstance) {
         registry.register(interfaceClass, serviceInstance);
@@ -55,6 +58,7 @@ public class ProviderServer {
         globelLimter = new ConcurrencyLimiter(properties.getGlobelMaxRequest());
         this.serializerManger = new SerializerManger();
         this.compressionManager = new CompressionManager();
+        this.invokeExcutor = new ThreadPoolExecutor(4,4,10,TimeUnit.SECONDS,new ArrayBlockingQueue<>(1024));
     }
 
     public void start() {
@@ -189,20 +193,50 @@ public class ProviderServer {
         }
 
         @Override
-        protected void channelRead0(ChannelHandlerContext channelHandlerContext, Request request) throws Exception {
+        protected void channelRead0(ChannelHandlerContext ctx, Request request) throws Exception {
             ProviderRegistry.Invocation service = registry.getService(request.getServiceName());
             if (service == null) {
-                channelHandlerContext.writeAndFlush(Response.error(String.format("No such service %s", request.getServiceName()), request.getRequestID()));
+                ctx.writeAndFlush(Response.error(String.format("No such service %s", request.getServiceName()), request.getRequestID()));
                 return;
             }
-            try {
-                Object result = service.invoke(request.getMethodName(), request.getParamsType(), request.getParams());
-                log.info("Request:{} result:{}", request, result);
-                channelHandlerContext.writeAndFlush(Response.ok(result, request.getRequestID()));
-            } catch (Exception e) {
-                channelHandlerContext.writeAndFlush(Response.error(String.format("Call Function Fail err:%s", e), request.getRequestID()));
+            invokeExcutor.execute(new InvokeTask(request,ctx,service));
+
+
+        }
+        private class InvokeTask implements Runnable{
+            private final Request request;
+            private final ChannelHandlerContext ctx;
+            private final ProviderRegistry.Invocation invocation;
+            InvokeTask(Request request, ChannelHandlerContext ctx, ProviderRegistry.Invocation service){
+                this.request = request;
+                this.ctx = ctx;
+                this.invocation = service;
             }
 
+            @Override
+            public void run() {
+                EventLoop eventLoop = ctx.channel().eventLoop();
+                try {
+                    Object result = invocation.invoke(request.getMethodName(), request.getParamsType(), request.getParams());
+                    log.info("Request:{} result:{}", request, result);
+                    eventLoop.execute(()->ctx.writeAndFlush(Response.ok(result, request.getRequestID())));
+                } catch (Exception e) {
+                    eventLoop.execute(()->ctx.writeAndFlush(Response.error(String.format("Call Function Fail err:%s", e), request.getRequestID())));
+                }
+            }
+        }
+
+        private class FastFailResponseHandler implements RejectedExecutionHandler{
+
+            @Override
+            public void rejectedExecution(Runnable task, ThreadPoolExecutor executor) {
+                if(task instanceof InvokeTask invokeTask){
+                    Response fastFail = Response.error("service busy",invokeTask.request.getRequestID());
+                    invokeTask.ctx.channel().eventLoop().execute(()->invokeTask.ctx.writeAndFlush(fastFail));
+                    return;
+                }
+                throw new RuntimeException("unexpected task");
+            }
         }
     }
 
