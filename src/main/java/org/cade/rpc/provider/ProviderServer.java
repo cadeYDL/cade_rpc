@@ -12,7 +12,6 @@ import org.cade.rpc.codec.MsgEncoder;
 import org.cade.rpc.codec.MsgDecoder;
 import org.cade.rpc.compress.Compression;
 import org.cade.rpc.compress.CompressionManager;
-import org.cade.rpc.excpetion.RPCException;
 import org.cade.rpc.handler.HeartbeatHandler;
 import org.cade.rpc.handler.TrafficRecordHandler;
 import org.cade.rpc.limit.ConcurrencyLimiter;
@@ -24,7 +23,7 @@ import org.cade.rpc.register.DefaultServiceRegister;
 import org.cade.rpc.register.Metadata;
 import org.cade.rpc.register.ServiceRegister;
 import org.cade.rpc.serialize.Serializer;
-import org.cade.rpc.serialize.SerializerManger;
+import org.cade.rpc.serialize.SerializerManager;
 
 import java.util.Locale;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -42,7 +41,7 @@ public class ProviderServer {
     private final ProviderRegistry registry;
     private final ProviderProperties properties;
     private final Limiter globelLimter;
-    private final SerializerManger serializerManger;
+    private final SerializerManager serializerManger;
     private final CompressionManager compressionManager;
     private final ThreadPoolExecutor invokeExcutor;
 
@@ -56,7 +55,7 @@ public class ProviderServer {
         registry = new ProviderRegistry();
         this.serviceRegister = new DefaultServiceRegister(properties.getRegistryConfig());
         globelLimter = new ConcurrencyLimiter(properties.getGlobelMaxRequest());
-        this.serializerManger = new SerializerManger();
+        this.serializerManger = new SerializerManager();
         this.compressionManager = new CompressionManager();
         this.invokeExcutor = new ThreadPoolExecutor(4,4,10,TimeUnit.SECONDS,new ArrayBlockingQueue<>(1024));
     }
@@ -175,18 +174,10 @@ public class ProviderServer {
         @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             log.info("New Client:{}", ctx.channel().remoteAddress());
-            Serializer.SerializerType serializerType = Serializer.SerializerType.valueOf(properties.getSerializer().toUpperCase(Locale.ROOT));
-            ctx.channel().attr(MsgEncoder.SERIALIZE_KEY).set(serializerType.getTypeCode());
+            ctx.channel().attr(MsgEncoder.SERIALIZE_KEY).set(properties.getSerializer());
             ctx.channel().attr(MsgEncoder.SERIALIZER_MANGER_ATTRIBUTE_KEY).set(serializerManger);
 
-            // 设置压缩类型，默认为 NONE
-            Compression.CompressionType compressionType;
-            if (properties.getCompress() == null || properties.getCompress().isEmpty()) {
-                compressionType = Compression.CompressionType.NONE;
-            } else {
-                compressionType = Compression.CompressionType.valueOf(properties.getCompress().toUpperCase(Locale.ROOT));
-            }
-            ctx.channel().attr(MsgEncoder.COMPRESSION_KEY).set(compressionType.getTypeCode());
+            ctx.channel().attr(MsgEncoder.COMPRESSION_KEY).set(properties.getCompress());
             ctx.channel().attr(MsgEncoder.COMPRESSION_MANAGER_ATTRIBUTE_KEY).set(compressionManager);
 
             ctx.fireChannelActive();

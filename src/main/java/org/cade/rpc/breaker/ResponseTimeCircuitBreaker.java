@@ -15,7 +15,7 @@ public class ResponseTimeCircuitBreaker implements CircuitBreaker {
     private final AtomicReference<State> stateRef = new AtomicReference<>(State.CLOSED);
     private final long windowMS;
     private final double failRatio;
-    private final int minRequstCount =0;
+    private final int minRequstCount =10;
     private final long slotIntervalMS = 5000;
     private final Function<RPCCallMetrics, Boolean> isFail = (metrics ->
             !metrics.isComplete() || metrics.getThrowable() != null || metrics.getDurationMS() > 2000);

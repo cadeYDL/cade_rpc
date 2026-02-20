@@ -10,8 +10,7 @@ import org.cade.rpc.fallback.DefaultFallback;
 import org.cade.rpc.fallback.Fallback;
 import org.cade.rpc.fallback.MockFallback;
 import org.cade.rpc.loadbalance.LoadBalancer;
-import org.cade.rpc.loadbalance.RandomLoadBalancer;
-import org.cade.rpc.loadbalance.RoundRobinLoadBalancer;
+import org.cade.rpc.loadbalance.LoadBalancerManager;
 import org.cade.rpc.message.Request;
 import org.cade.rpc.message.Response;
 import org.cade.rpc.metrics.RPCCallMetrics;
@@ -40,10 +39,14 @@ public class ConsumerProxyFactory {
     private final InflightRequestManager inflightRequestManager;
     private final CircuitBreakerManager circuitBreakerManager;
     private final Fallback fallback;
+    private final RetryManager retryManager;
+    private final LoadBalancerManager loadBalancerManager;
 
 
     ConsumerProxyFactory(ConsumerProperties properties) throws Exception {
         this.inflightRequestManager = new InflightRequestManager(properties);
+        this.retryManager = new RetryManager();
+        this.loadBalancerManager = new LoadBalancerManager();
         this.connectionManager = new ConnectionManager(inflightRequestManager,properties);
         this.serviceRegister = new DefaultServiceRegister(properties.getRegistryConfig());
         this.circuitBreakerManager = new CircuitBreakerManager(properties);
@@ -55,34 +58,25 @@ public class ConsumerProxyFactory {
 
 
     private LoadBalancer createLoadBalancer(){
-        switch (properties.getLoadBalancePolicy()){
-            case "random":
-                return new RandomLoadBalancer();
-            case "roundrobin":
-                return new RoundRobinLoadBalancer();
-            default:
-                throw new RPCException("unknow load balance policy");
+        LoadBalancer loadBalancer = this.loadBalancerManager.getLoadBalancer(properties.getLoadBalancePolicy());
+        if (loadBalancer == null) {
+            throw new RPCException("unknown load balance policy: " + properties.getLoadBalancePolicy());
         }
+        return loadBalancer;
     }
 
 
 
     public <I> I getConsumerProxy(Class<I> interfaceClass) {
-        return (I) Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(), new Class<?>[]{interfaceClass}, new ConsumerInvocationHandler<>(interfaceClass,createLoadBalancer(),createRetryPolicy()));
+        return (I) Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(), new Class<?>[]{interfaceClass}, new ConsumerInvocationHandler<>(interfaceClass,createLoadBalancer(),createRetryPolicy(properties.getRetryPolicy())));
     }
 
-    private RetryPolicy createRetryPolicy() {
-        switch (properties.getRetryPolicy()){
-            case "same":
-                return new RetrySame();
-            case "faiover":
-                return new FaioverRetryPolicy();
-            case "forking":
-                return new ForkingRetryPolicy();
-            case "foiover_once":
-                return new FoioverOnceRetryPolicy();
+    private RetryPolicy createRetryPolicy(String retryPolicyName) {
+        RetryPolicy retryPolicy = this.retryManager.getRetryPolicy(retryPolicyName);
+        if (retryPolicy==null){
+            throw new IllegalArgumentException(properties.getRetryPolicy()+" this retry policy not exist");
         }
-        throw new IllegalArgumentException(properties.getRetryPolicy()+" this retry policy not exist");
+        return retryPolicy;
     }
 
     public class ConsumerInvocationHandler<I> implements InvocationHandler {

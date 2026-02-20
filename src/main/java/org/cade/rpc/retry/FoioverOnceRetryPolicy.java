@@ -3,12 +3,14 @@ package org.cade.rpc.retry;
 import org.cade.rpc.excpetion.RPCException;
 import org.cade.rpc.message.Response;
 import org.cade.rpc.register.Metadata;
+import org.cade.rpc.spi.SPI;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+@SPI("foiover_once")
 public class FoioverOnceRetryPolicy implements RetryPolicy {
     @Override
     public Response retry(RetryContext context) throws Exception {

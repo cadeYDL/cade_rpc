@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.cade.rpc.excpetion.RPCException;
 import org.cade.rpc.message.Response;
 import org.cade.rpc.register.Metadata;
+import org.cade.rpc.spi.SPI;
 
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
@@ -12,6 +13,7 @@ import java.util.concurrent.TimeoutException;
 
 
 @Slf4j(topic = "retry_same")
+@SPI("same")
 public class RetrySame implements RetryPolicy{
     final int retryTimes = 3;
     final long retryInterval = 100;

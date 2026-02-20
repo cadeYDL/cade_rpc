@@ -37,4 +37,14 @@ public class HessonSerializer implements Serializer {
         }
 
     }
+
+    @Override
+    public int code() {
+        return 1;
+    }
+
+    @Override
+    public String getName() {
+        return "hesson";
+    }
 }

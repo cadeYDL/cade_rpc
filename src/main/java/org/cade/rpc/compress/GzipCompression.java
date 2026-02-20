@@ -1,6 +1,7 @@
 package org.cade.rpc.compress;
 
 import org.cade.rpc.excpetion.CompressionException;
+import org.cade.rpc.spi.SPI;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -22,6 +23,16 @@ public class GzipCompression implements Compression {
      * GZIP 头部约 10-18 字节，对于小数据压缩收益可能小于开销。
      */
     private static final int COMPRESSION_THRESHOLD = 512;
+
+    @Override
+    public String getName() {
+        return "gzip";
+    }
+
+    @Override
+    public int code() {
+        return 1;
+    }
 
     @Override
     public boolean needCompress(byte[] data) {
