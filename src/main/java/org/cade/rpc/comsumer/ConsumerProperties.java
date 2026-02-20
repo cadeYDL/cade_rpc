@@ -14,6 +14,8 @@ public class ConsumerProperties {
     private int rpcPreSecond = 100000;
     private int rpcPreChannelSecond = 1000000;
     private double slowRequestBreakRatio = 0.5;
+    private String serializer = "json";
+    private String compress = "zstd";
 
     private RegistryConfig registryConfig = new RegistryConfig();
 }

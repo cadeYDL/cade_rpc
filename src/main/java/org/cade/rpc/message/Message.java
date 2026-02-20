@@ -3,6 +3,9 @@ package org.cade.rpc.message;
 import lombok.Data;
 import lombok.Getter;
 
+import java.util.HashMap;
+import java.util.Map;
+
 @Data
 public class Message {
     public static final byte[] Magic = "cade".getBytes();
@@ -14,15 +17,45 @@ public class Message {
 
     private byte messageType;
 
+    private byte serializerAndCompress;
+
     private byte[] payload;
 
+    private static final Map<Class<?>, MessageType> CLASS_CACHE = new HashMap<>();
+
+    private static final Map<Integer, MessageType> CODE_CACHE = new HashMap<>();
+
+    static {
+        for (MessageType type : MessageType.values()) {
+            if (CLASS_CACHE.put(type.getMessageClass(), type) != null) {
+                throw new IllegalArgumentException(type + " messageType already exists in CLASS_CACHE");
+            }
+            if (CODE_CACHE.put((int) type.getCode(), type) != null) {
+                throw new IllegalArgumentException(type + " messageType already exists in CODE_CACHE");
+            }
+        }
+    }
+
+    public static MessageType getMessageType(Class<?> messageClass) {
+        return CLASS_CACHE.get(messageClass);
+    }
+
+    public static MessageType getMessageTypeFromCode(int code) {
+        return CODE_CACHE.get(code);
+    }
+
     public enum MessageType {
-        REQUEST(1), RESPONSE(2);
+        REQUEST(1, Request.class), RESPONSE(2, Response.class);
+
+        @Getter
+        private final Class<?> messageClass;
+
         @Getter
         private final byte code;
-        MessageType(int code) {
-            this.code = (byte) code;
-        }
 
+        MessageType(int code, Class<?> messageClass) {
+            this.code = (byte) code;
+            this.messageClass = messageClass;
+        }
     }
 }
