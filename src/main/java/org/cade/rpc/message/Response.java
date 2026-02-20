@@ -2,8 +2,10 @@ package org.cade.rpc.message;
 
 import lombok.Data;
 
+import java.io.Serializable;
+
 @Data
-public class Response {
+public class Response implements Serializable {
     private Object result;
     private Integer code;
     private String message;

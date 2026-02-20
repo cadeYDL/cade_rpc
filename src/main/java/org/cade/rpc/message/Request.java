@@ -2,10 +2,11 @@ package org.cade.rpc.message;
 
 import lombok.Data;
 
+import java.io.Serializable;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Data
-public class Request  {
+public class Request implements Serializable {
     private static final AtomicInteger idGenerator = new AtomicInteger(1);
 
     private String serviceName;

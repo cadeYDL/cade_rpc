@@ -11,4 +11,6 @@ public class ProviderProperties {
     private Integer workerThreadNumber = 4;
     private int globelMaxRequest = 1000000;
     private int preConsumerMax = 1000000;
+    private String serializer = "json";
+    private String compress = "gzip";
 }
