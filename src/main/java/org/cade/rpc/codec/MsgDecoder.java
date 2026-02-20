@@ -8,7 +8,7 @@ import org.cade.rpc.compress.Compression;
 import org.cade.rpc.compress.CompressionManager;
 import org.cade.rpc.message.Message;
 import org.cade.rpc.serialize.Serializer;
-import org.cade.rpc.serialize.SerializerManger;
+import org.cade.rpc.serialize.SerializerManager;
 
 import java.util.Arrays;
 
@@ -22,11 +22,11 @@ import java.util.Arrays;
  */
 public class MsgDecoder extends LengthFieldBasedFrameDecoder {
     private final static int MaxLength = 1024 * 1024;
-    private static final AttributeKey<SerializerManger> SERIALIZER_MANGER_ATTRIBUTE_KEY = AttributeKey.valueOf("serializerMangerKey");
+    private static final AttributeKey<SerializerManager> SERIALIZER_MANGER_ATTRIBUTE_KEY = AttributeKey.valueOf("serializerMangerKey");
     private static final AttributeKey<CompressionManager> COMPRESSION_MANAGER_ATTRIBUTE_KEY = AttributeKey.valueOf("compressionManagerKey");
 
     // 缓存的管理器实例，使用 volatile 保证跨线程可见性
-    private volatile SerializerManger serializerManger;
+    private volatile SerializerManager serializerManger;
     private volatile CompressionManager compressionManager;
 
     public MsgDecoder() {
@@ -102,7 +102,7 @@ public class MsgDecoder extends LengthFieldBasedFrameDecoder {
         this.serializerManger = ctx.channel().attr(SERIALIZER_MANGER_ATTRIBUTE_KEY).get();
         if (this.serializerManger == null) {
             // 如果没有设置，创建默认实例
-            this.serializerManger = new SerializerManger();
+            this.serializerManger = new SerializerManager();
         }
 
         // 从 Channel 属性中获取 CompressionManager

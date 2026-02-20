@@ -13,6 +13,10 @@ public class ConsuerApp  {
         Add addConsumer = factory.getConsumerProxy(Add.class);
         System.out.println(addConsumer.add(12,2));
         System.out.println(addConsumer.mul(10,2));
+
+        GenericConsumer consumer = factory.getConsumerProxy(GenericConsumer.class);
+        Object obj =  consumer.$invoke(Add.class.getName(),"add",new String[]{"int","int"},new Object[]{12,2});
+        System.out.println(obj);
     }
 
 }

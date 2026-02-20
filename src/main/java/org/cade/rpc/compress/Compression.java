@@ -1,8 +1,8 @@
 package org.cade.rpc.compress;
 
-import lombok.Getter;
+import org.cade.rpc.spi.Extension;
 
-public interface Compression {
+public interface Compression extends Extension {
     byte[] compress(byte[] data);
 
     byte[] decompress(byte[] data);
@@ -20,32 +20,4 @@ public interface Compression {
         return true;
     }
 
-    enum CompressionType {
-        NONE(0, new NoneCompression()),
-        GZIP(1, new GzipCompression()),
-        ZSTD(2, new ZstdCompression());
-
-        @Getter
-        private final int typeCode;
-        @Getter
-        private final Compression compression;
-
-        CompressionType(int typeCode, Compression compression) {
-            this.typeCode = typeCode;
-            this.compression = compression;
-        }
-
-        static CompressionType getCompressionTypeFromCode(int code) {
-            switch (code) {
-                case 0:
-                    return NONE;
-                case 1:
-                    return GZIP;
-                case 2:
-                    return ZSTD;
-                default:
-                    throw new IllegalArgumentException("No such compression type: " + code);
-            }
-        }
-    }
 }

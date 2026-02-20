@@ -1,0 +1,3 @@
+org.cade.rpc.compress.GzipCompression
+org.cade.rpc.compress.ZstdCompression
+org.cade.rpc.compress.NoneCompression

@@ -9,7 +9,7 @@ import org.cade.rpc.compress.Compression;
 import org.cade.rpc.compress.CompressionManager;
 import org.cade.rpc.message.Message;
 import org.cade.rpc.serialize.Serializer;
-import org.cade.rpc.serialize.SerializerManger;
+import org.cade.rpc.serialize.SerializerManager;
 
 /**
  * RPC 消息编码器，负责将消息对象序列化、压缩后写入网络。
@@ -24,18 +24,18 @@ import org.cade.rpc.serialize.SerializerManger;
  */
 @Slf4j(topic = "encoder")
 public class MsgEncoder extends MessageToByteEncoder<Object> {
-    public static final AttributeKey<Integer> SERIALIZE_KEY = AttributeKey.valueOf("serializeKey");
-    public static final AttributeKey<SerializerManger> SERIALIZER_MANGER_ATTRIBUTE_KEY = AttributeKey.valueOf("serializerMangerKey");
-    public static final AttributeKey<Integer> COMPRESSION_KEY = AttributeKey.valueOf("compressionKey");
+    public static final AttributeKey<String> SERIALIZE_KEY = AttributeKey.valueOf("serializeKey");
+    public static final AttributeKey<SerializerManager> SERIALIZER_MANGER_ATTRIBUTE_KEY = AttributeKey.valueOf("serializerMangerKey");
+    public static final AttributeKey<String> COMPRESSION_KEY = AttributeKey.valueOf("compressionKey");
     public static final AttributeKey<CompressionManager> COMPRESSION_MANAGER_ATTRIBUTE_KEY = AttributeKey.valueOf("compressionManagerKey");
 
     // 缓存的序列化器，使用 volatile 保证跨线程可见性
     private volatile Serializer serializer;
-    private volatile int serializeCode;
+    private volatile String serializeKey;
 
     // 缓存的压缩器：用户配置的压缩器
     private volatile Compression configuredCompression;
-    private volatile int configuredCompressionCode;
+    private volatile String configuredCompressionCode;
 
     @Override
     protected void encode(ChannelHandlerContext ctx, Object msg, ByteBuf out) {
@@ -60,12 +60,12 @@ public class MsgEncoder extends MessageToByteEncoder<Object> {
         int actualCompressionCode=0;
         if (configuredCompression.needCompress(payload)) {
             // 执行压缩
-            actualCompressionCode = configuredCompressionCode;
+            actualCompressionCode = configuredCompression.code();
             payload = configuredCompression.compress(payload);
         }
 
         // 动态计算序列化和压缩类型字节：前4位为序列化类型，后4位为压缩类型
-        byte serializeAndCompressionByte = (byte) ((serializeCode << 4) | actualCompressionCode);
+        byte serializeAndCompressionByte = (byte) ((serializer.code() << 4) | actualCompressionCode);
 
         // 计算总长度
         int length = magic.length + Byte.BYTES * 2 + version.length + payload.length;
@@ -86,27 +86,27 @@ public class MsgEncoder extends MessageToByteEncoder<Object> {
      */
     private void initializeCodecs(ChannelHandlerContext ctx) {
         // 获取序列化类型代码
-        Integer serializeCodeObj = ctx.channel().attr(SERIALIZE_KEY).get();
+        String serializeCodeObj = ctx.channel().attr(SERIALIZE_KEY).get();
         if (serializeCodeObj == null) {
             throw new IllegalArgumentException("Serialize type not set in channel attributes");
         }
-        this.serializeCode = serializeCodeObj;
+        this.serializeKey = serializeCodeObj;
 
         // 获取压缩类型代码，默认无压缩
-        Integer compressionCodeObj = ctx.channel().attr(COMPRESSION_KEY).get();
+        String compressionCodeObj = ctx.channel().attr(COMPRESSION_KEY).get();
         if (compressionCodeObj == null) {
-            compressionCodeObj = 0;
+            compressionCodeObj = "none";
         }
         this.configuredCompressionCode = compressionCodeObj;
 
         // 获取序列化器
-        SerializerManger serializerManger = ctx.channel().attr(SERIALIZER_MANGER_ATTRIBUTE_KEY).get();
+        SerializerManager serializerManger = ctx.channel().attr(SERIALIZER_MANGER_ATTRIBUTE_KEY).get();
         if (serializerManger == null) {
             throw new IllegalArgumentException("SerializerManger not set in channel attributes");
         }
-        this.serializer = serializerManger.getSerializer(serializeCode);
+        this.serializer = serializerManger.getSerializer(serializeKey);
         if (this.serializer == null) {
-            throw new IllegalArgumentException("Unsupported serialize type: " + serializeCode);
+            throw new IllegalArgumentException("Unsupported serialize type: " + serializeKey);
         }
 
         // 获取压缩器
@@ -120,6 +120,6 @@ public class MsgEncoder extends MessageToByteEncoder<Object> {
         }
 
         log.debug("Encoder initialized: serialize={}, configuredCompression={}",
-                serializeCode, configuredCompressionCode);
+                serializeKey, configuredCompressionCode);
     }
 }

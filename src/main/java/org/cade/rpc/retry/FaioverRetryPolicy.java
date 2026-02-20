@@ -2,10 +2,14 @@ package org.cade.rpc.retry;
 
 import org.cade.rpc.excpetion.RPCException;
 import org.cade.rpc.register.Metadata;
+import org.cade.rpc.spi.SPI;
 
 import java.util.ArrayList;
 import java.util.List;
 
+
+
+@SPI("faiover")
 public class FaioverRetryPolicy extends RetrySame {
     private List<Metadata> metadataList = null;
     @Override

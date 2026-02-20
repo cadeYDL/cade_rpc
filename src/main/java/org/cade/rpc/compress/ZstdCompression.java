@@ -2,6 +2,7 @@ package org.cade.rpc.compress;
 
 import com.github.luben.zstd.Zstd;
 import org.cade.rpc.excpetion.CompressionException;
+import org.cade.rpc.spi.SPI;
 
 /**
  * Zstandard (zstd) 压缩实现。
@@ -50,6 +51,16 @@ public class ZstdCompression implements Compression {
             throw new IllegalArgumentException("Zstd compression level must be between 1 and 22");
         }
         this.compressionLevel = compressionLevel;
+    }
+
+    @Override
+    public String getName() {
+        return "zstd";
+    }
+
+    @Override
+    public int code() {
+        return 2;
     }
 
     @Override
