@@ -18,11 +18,15 @@ import org.cade.rpc.register.DefaultServiceRegister;
 import org.cade.rpc.register.Metadata;
 import org.cade.rpc.register.ServiceRegister;
 import org.cade.rpc.retry.*;
+import org.cade.rpc.serialize.JSONSerializer;
+import org.cade.rpc.serialize.Serializer;
+import org.cade.rpc.utils.BaseType;
 import org.checkerframework.checker.nullness.qual.NonNull;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
@@ -41,9 +45,11 @@ public class ConsumerProxyFactory {
     private final Fallback fallback;
     private final RetryManager retryManager;
     private final LoadBalancerManager loadBalancerManager;
+    private final Serializer jsonSerializer;
 
 
     ConsumerProxyFactory(ConsumerProperties properties) throws Exception {
+        this.jsonSerializer = new JSONSerializer();
         this.inflightRequestManager = new InflightRequestManager(properties);
         this.retryManager = new RetryManager();
         this.loadBalancerManager = new LoadBalancerManager();
@@ -93,7 +99,7 @@ public class ConsumerProxyFactory {
             if (method.getDeclaringClass() == Object.class) {
                 return invokeObjectMethod(proxy, method, args);
             }
-            boolean genericInvoke = method.getName().equals("$invoke");
+            boolean genericInvoke = isGenericInvoke(method);
             String serviceName = genericInvoke?args[0].toString() : interfaceClass.getName();
 
 
@@ -110,7 +116,7 @@ public class ConsumerProxyFactory {
                 CompletableFuture<Response> future = callRPCAsync(metrics.getMethod(), metrics.getArgs(), service);
                 response = future.get(properties.getRequestTimeoutMS(), TimeUnit.MILLISECONDS);
                 metrics.complete(response);
-                return processResponse(response);
+                return processResponse(response,method,args);
             } catch (Exception e) {
                 metrics.complete(e);
             } finally {
@@ -118,7 +124,7 @@ public class ConsumerProxyFactory {
                 fallback.recordMetrics(metrics);
             }
             try {
-                return processResponse(doRetry(metrics, metadataList));
+                return processResponse(doRetry(metrics, metadataList),method,args);
             } catch (Exception e) {
                 return fallback.fallback(metrics);
             }
@@ -197,32 +203,70 @@ public class ConsumerProxyFactory {
             return retryContext;
         }
 
-        private Object processResponse(Response response) {
+        private Object processResponse(Response response, Method method, Object[] args) {
+
             if (response.getCode() != 0) {
                 throw new RPCException(response.getMessage());
             }
-            return response.getResult();
+            boolean genericInvoke = isGenericInvoke(method);
+            Object result = response.getResult();
+            Class<?> returnClass = method.getReturnType();
+            if(!genericInvoke && returnClass!=void.class && !BaseType.is(returnClass)){
+                result = jsonSerializer.deserialize(result.toString().getBytes(StandardCharsets.UTF_8),returnClass);
+            }
+            return result;
         }
 
         private @NonNull Request buildRequest(Method method, Object[] args) {
-            boolean genericInvoke = method.getName().equals("$invoke");
+            boolean genericInvoke = isGenericInvoke(method);
             Request request = new Request();
 
 
             if (genericInvoke) {
                 request.setGenericInvoke(true);
                 request.setServiceName(args[0].toString());
-                request.setParamsTypeStr((String[]) args[2]);
-                request.setParams((Object[]) args[3]);
+                String[] requestParamsType =(String[]) args[2];
+                request.setParamsTypeStr(requestParamsType);
+                request.setParams(prepareRequestParams((Object[]) args[3],requestParamsType));
                 request.setMethodName(args[1].toString());
             }else{
                 request.setServiceName(interfaceClass.getName());
                 request.setParamsType(method.getParameterTypes());
-                request.setParams(args);
+                request.setParams(prepareRequestParams(args,method.getParameterTypes()));
                 request.setMethodName(method.getName());
+
             }
 
             return request;
+        }
+
+        private Object[] prepareRequestParams(Object[] requestParams, String[] requestParamsType) {
+            Object[] res = new Object[requestParams.length];
+            for(int i=0;i<requestParams.length;i++) {
+                if(BaseType.is(requestParamsType[i])){
+                    res[i] = requestParams[i];
+                    continue;
+                }
+                res[i] = requestParams[i];
+            }
+            return res;
+        }
+
+        private Object[] prepareRequestParams(Object[] requestParams, Class<?>[] requestParamsType) {
+            Object[] res = new Object[requestParams.length];
+            for(int i=0;i<requestParams.length;i++) {
+                if(BaseType.is(requestParamsType[i])){
+                    res[i] = requestParams[i];
+                    continue;
+                }
+                res[i] = new String(jsonSerializer.serialize(requestParams[i]),StandardCharsets.UTF_8);
+            }
+            return res;
+        }
+
+        private static boolean isGenericInvoke(Method method) {
+            boolean genericInvoke = method.getName().equals("$invoke");
+            return genericInvoke;
         }
 
         private @NonNull Object invokeObjectMethod(Object proxy, Method method, Object[] args) {
