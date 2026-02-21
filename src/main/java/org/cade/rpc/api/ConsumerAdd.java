@@ -10,4 +10,9 @@ public class ConsumerAdd implements Add{
     public int mul(int a, int b) {
         return 0;
     }
+
+    @Override
+    public User addUser(User user1, User user2) {
+        return null;
+    }
 }

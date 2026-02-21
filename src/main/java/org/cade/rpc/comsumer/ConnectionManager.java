@@ -50,7 +50,7 @@ public class ConnectionManager {
                         .addLast(new MsgEncoder())
                         .addLast(new IdleStateHandler(30, 5, 0, TimeUnit.SECONDS))
                         .addLast(new HeartbeatHandler())
-                        .addLast(new ConsumerHnadler());
+                        .addLast(new ConsumerHandler());
             }
         });
         return bootstrap;
@@ -92,7 +92,7 @@ public class ConnectionManager {
         }
     }
 
-    private class ConsumerHnadler extends SimpleChannelInboundHandler<Response> {
+    private class ConsumerHandler extends SimpleChannelInboundHandler<Response> {
 
         @Override
         protected void channelRead0(ChannelHandlerContext channelHandlerContext, Response response) throws Exception {

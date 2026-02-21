@@ -15,5 +15,6 @@ public class Request implements Serializable {
     private Class<?>[] paramsType;
     private String[] paramsTypeStr;
     private Object[] params;
+    private String returnTypeStr;
     private int requestID = idGenerator.getAndIncrement();
 }

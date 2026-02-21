@@ -11,7 +11,6 @@ import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
 import org.cade.rpc.codec.MsgEncoder;
 import org.cade.rpc.codec.MsgDecoder;
-import org.cade.rpc.compress.Compression;
 import org.cade.rpc.compress.CompressionManager;
 import org.cade.rpc.handler.HeartbeatHandler;
 import org.cade.rpc.handler.TrafficRecordHandler;
@@ -23,11 +22,10 @@ import org.cade.rpc.message.Response;
 import org.cade.rpc.register.DefaultServiceRegister;
 import org.cade.rpc.register.Metadata;
 import org.cade.rpc.register.ServiceRegister;
-import org.cade.rpc.serialize.Serializer;
 import org.cade.rpc.serialize.SerializerManager;
+import org.cade.rpc.utils.BaseType;
 
-import java.util.HashMap;
-import java.util.Locale;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
@@ -216,7 +214,7 @@ public class ProviderServer {
                     Class<?>[] paramsClass = resolveMethodParams(request);
                     Object result = invocation.invoke(request.getMethodName(), paramsClass, resovleMethodParams(request,paramsClass));
                     log.info("Request:{} result:{}", request, result);
-                    Object finnalResult = request.isGenericInvoke()? resovleResult(result):result;
+                    Object finnalResult = resovleResult(result);
                     eventLoop.execute(() -> ctx.writeAndFlush(Response.ok(finnalResult, request.getRequestID())));
                 } catch (Exception e) {
                     eventLoop.execute(() -> ctx.writeAndFlush(Response.error(String.format("Call Function Fail err:%s", e), request.getRequestID())));
@@ -224,35 +222,24 @@ public class ProviderServer {
             }
 
             private Object resovleResult(Object result) {
-                Class<?> rclass= result.getClass();
-                if(rclass==int.class||rclass==float.class||rclass==double.class||rclass==String.class){
+                Class<?> rclass = result.getClass();
+                if (BaseType.is(rclass)) {
                     return result;
                 }
-                if(rclass==Integer.class||rclass==Float.class||rclass==Double.class){
-                    return result;
-                }
-                if(rclass==short.class||rclass==byte.class||rclass==char.class||rclass==long.class||rclass==boolean.class){
-                    return result;
-                }
-                if(rclass==Short.class||rclass==Byte.class||rclass==Character.class||rclass==Long.class||rclass== Boolean.class){
-                    return result;
-                }
-                return new HashMap<>(JSONObject.from(result));
+                return new String(ProviderServer.this.serializerManger.getSerializer("json").serialize(result), StandardCharsets.UTF_8);
             }
 
             @SuppressWarnings("all")
             private Object[] resovleMethodParams(Request request, Class<?>[] paramsType) {
-                if (!request.isGenericInvoke()) {
-                    return request.getParams();
-                }
                 Object[] params = request.getParams();
                 Object[] result = new Object[params.length];
                 for (int i = 0; i < params.length; i++) {
-                    if(params[i] instanceof Map<?,?> map){
-                        result[i] = new JSONObject(map).toJavaObject(paramsType[i]);
+                    Class<?> paramType = paramsType[i];
+                    if(BaseType.is(paramType)){
+                        result[i] = params[i];
                         continue;
                     }
-                    result[i] = params[i];
+                    result[i] = serializerManger.getSerializer("json").deserialize(params[i].toString().getBytes(StandardCharsets.UTF_8),paramType);
                 }
                 return result;
             }
@@ -271,28 +258,13 @@ public class ProviderServer {
             }
 
             private Class<?> analysisFromString(String classStr) throws ClassNotFoundException {
-                switch (classStr) {
-                    case "int":
-                        return int.class;
-                    case "long":
-                        return long.class;
-                    case "double":
-                        return double.class;
-                    case "float":
-                        return float.class;
-                    case "boolean":
-                        return boolean.class;
-                    case "String":
-                        return String.class;
-                    case "byte":
-                        return byte.class;
-                    case "short":
-                        return short.class;
-                    case "char":
-                        return char.class;
-                    default:
-                        return Class.forName(classStr);
+                // 首先尝试从基础类型中查找
+                Class<?> baseType = BaseType.getClass(classStr);
+                if (baseType != null) {
+                    return baseType;
                 }
+                // 如果不是基础类型，则使用 Class.forName 加载
+                return Class.forName(classStr);
             }
         }
 
