@@ -28,6 +28,8 @@ public class ProviderRegistry {
         // 避免重复添加同一个实例
         if (!this.globalInterceptors.contains(interceptor)) {
             this.globalInterceptors.add(interceptor);
+            // 清除所有已注册服务的拦截器链缓存
+            serviceMap.values().forEach(Invocation::clearChainCache); // 新增：清除缓存
         }
     }
 
@@ -68,6 +70,7 @@ public class ProviderRegistry {
         private final I serviceInstance;
         private final Class<I> interfaceClass;
         private final InterceptorConfig interceptorConfig;
+        private final Map<Method, InterceptorChain> chainCache = new ConcurrentHashMap<>(); // 新增缓存字段
 
         public Invocation(Class<I> interfaceClass, I serviceInstance) {
             this(interfaceClass, serviceInstance, new InterceptorConfig());
@@ -83,18 +86,30 @@ public class ProviderRegistry {
             return interceptorConfig;
         }
 
+        // 新增方法：清除缓存
+        public void clearChainCache() {
+            this.chainCache.clear();
+        }
+
         public Object invoke(String methodName,Class<?>[] paramsClass, Object[] args) throws Exception {
             Method invokeMethod = interfaceClass.getDeclaredMethod(methodName,paramsClass);
 
-            // 1. 创建临时的全局配置
-            InterceptorConfig globalConfig = new InterceptorConfig();
-            globalInterceptors.forEach(globalConfig::addInterfaceInterceptor); // 使用外部类的 globalInterceptors
+            // 尝试从缓存中获取拦截器链
+            InterceptorChain chain = chainCache.get(invokeMethod);
 
-            // 2. 合并全局配置和服务特定配置
-            InterceptorConfig finalConfig = InterceptorAnnotationUtil.merge(globalConfig, this.interceptorConfig);
+            if (chain == null) {
+                // 如果缓存中没有，则创建并缓存
+                // 1. 创建临时的全局配置
+                InterceptorConfig globalConfig = new InterceptorConfig();
+                globalInterceptors.forEach(globalConfig::addInterfaceInterceptor); // 使用外部类的 globalInterceptors
 
-            // 3. 获取最终的拦截器链
-            InterceptorChain chain = finalConfig.getChain(invokeMethod);
+                // 2. 合并全局配置和服务特定配置
+                InterceptorConfig finalConfig = InterceptorAnnotationUtil.merge(globalConfig, this.interceptorConfig);
+
+                // 3. 获取最终的拦截器链
+                chain = finalConfig.getChain(invokeMethod);
+                chainCache.put(invokeMethod, chain); // 存入缓存
+            }
 
             if (chain.isEmpty()) {
                 // 快速路径：无拦截器，直接调用
