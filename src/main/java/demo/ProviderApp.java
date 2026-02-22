@@ -1,7 +1,7 @@
 package demo;
 
-import org.cade.rpc.api.Add;
-import org.cade.rpc.provider.AddImpl;
+import demo.api.Add;
+import demo.api.AddImpl;
 import org.cade.rpc.provider.ProviderProperties;
 import org.cade.rpc.provider.ProviderServer;
 

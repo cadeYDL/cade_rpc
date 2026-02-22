@@ -1,4 +1,4 @@
-package org.cade.rpc.api;
+package demo.api;
 
 import lombok.Data;
 

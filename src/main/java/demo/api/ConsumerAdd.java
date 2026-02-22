@@ -1,4 +1,4 @@
-package org.cade.rpc.api;
+package demo.api;
 
 public class ConsumerAdd implements Add{
     @Override

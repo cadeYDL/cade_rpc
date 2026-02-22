@@ -72,7 +72,7 @@ public interface Add {
 ```java
 package org.cade.rpc.provider;
 
-import org.cade.rpc.api.Add;
+import demo.api.Add;
 
 public class AddImpl implements Add {
     @Override
@@ -87,7 +87,8 @@ public class AddImpl implements Add {
 ```java
 package org.cade.rpc.provider;
 
-import org.cade.rpc.api.Add;
+import demo.api.Add;
+import demo.api.AddImpl;
 
 public class ProviderApp {
     public static void main(String[] args) throws Exception {
@@ -121,7 +122,7 @@ mvn exec:java -Dexec.mainClass="demo.ProviderApp"
 ```java
 package org.cade.rpc.comsumer;
 
-import org.cade.rpc.api.Add;
+import demo.api.Add;
 
 public class ConsuerApp {
     public static void main(String[] args) throws Exception {

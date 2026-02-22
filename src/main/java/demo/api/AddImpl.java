@@ -1,10 +1,4 @@
-package org.cade.rpc.provider;
-
-import org.cade.rpc.api.Add;
-import org.cade.rpc.api.User;
-
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.LockSupport;
+package demo.api;
 
 public class AddImpl implements Add {
     @Override
