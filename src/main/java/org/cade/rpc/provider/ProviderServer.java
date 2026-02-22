@@ -48,6 +48,10 @@ public class ProviderServer {
         registry.register(interfaceClass, serviceInstance);
     }
 
+    public <I> void register(Class<I> interfaceClass, I serviceInstance, org.cade.rpc.interceptor.InterceptorConfig config) {
+        registry.register(interfaceClass, serviceInstance, config);
+    }
+
 
     public ProviderServer(ProviderProperties properties) throws Exception {
         this.properties = properties;
