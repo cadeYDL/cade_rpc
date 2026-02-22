@@ -245,15 +245,7 @@ public class ConsumerProxyFactory {
         }
 
         private Object[] prepareRequestParams(Object[] requestParams, String[] requestParamsType) {
-            Object[] res = new Object[requestParams.length];
-            for(int i=0;i<requestParams.length;i++) {
-                if(BaseType.is(requestParamsType[i])){
-                    res[i] = requestParams[i];
-                    continue;
-                }
-                res[i] = requestParams[i];
-            }
-            return res;
+            return requestParams;
         }
 
         private Object[] prepareRequestParams(Object[] requestParams, Class<?>[] requestParamsType) {
