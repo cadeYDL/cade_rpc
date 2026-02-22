@@ -12,6 +12,8 @@ import org.cade.rpc.codec.MsgEncoder;
 import org.cade.rpc.codec.MsgDecoder;
 import org.cade.rpc.compress.CompressionManager;
 import org.cade.rpc.handler.HeartbeatHandler;
+import org.cade.rpc.handler.ParamConvertHandler;
+import org.cade.rpc.handler.ResultConvertHandler;
 import org.cade.rpc.handler.TrafficRecordHandler;
 import org.cade.rpc.limit.ConcurrencyLimiter;
 import org.cade.rpc.limit.Limiter;
@@ -23,9 +25,6 @@ import org.cade.rpc.register.Metadata;
 import org.cade.rpc.register.ServiceRegister;
 import org.cade.rpc.serialize.SerializerManager;
 import org.cade.rpc.trace.TraceContext;
-import org.cade.rpc.utils.BaseType;
-
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -47,6 +46,10 @@ public class ProviderServer {
 
     public <I> void register(Class<I> interfaceClass, I serviceInstance) {
         registry.register(interfaceClass, serviceInstance);
+    }
+
+    public <I> void register(Class<I> interfaceClass, I serviceInstance, org.cade.rpc.interceptor.InterceptorConfig config) {
+        registry.register(interfaceClass, serviceInstance, config);
     }
 
 
@@ -75,6 +78,8 @@ public class ProviderServer {
                                 .addLast(new IdleStateHandler(30, 5, 0, TimeUnit.SECONDS))
                                 .addLast(new HeartbeatHandler())
                                 .addLast(new LimitHandler())
+                                .addLast(new ParamConvertHandler())
+                                .addLast(new ResultConvertHandler())
                                 .addLast(new ProviderHandler());
                     }
                 });
@@ -223,13 +228,17 @@ public class ProviderServer {
                 }
 
                 try {
-                    Class<?>[] paramsClass = resolveMethodParams(request);
-                    Object result = invocation.invoke(request.getMethodName(), paramsClass, resovleMethodParams(request,paramsClass));
+                    // 参数已经在 ParamConvertHandler 中转换完成，直接使用
+                    Object result = invocation.invoke(
+                            request.getMethodName(),
+                            request.getParamsType(),
+                            request.getParams()
+                    );
                     log.info("Request:{} result:{}", request, result);
-                    Object finnalResult = resolveResult(result);
 
                     // 创建响应并设置 traceId
-                    Response response = Response.ok(finnalResult, request.getRequestID());
+                    // 结果将在 ResultConvertHandler 中转换
+                    Response response = Response.ok(result, request.getRequestID());
                     response.setTraceId(traceId);
                     eventLoop.execute(() -> ctx.writeAndFlush(response));
                 } catch (Exception e) {
@@ -242,52 +251,6 @@ public class ProviderServer {
                     // 清理 TraceContext，防止 ThreadLocal 内存泄漏
                     TraceContext.clear();
                 }
-            }
-
-            private Object resolveResult(Object result) {
-                Class<?> rclass = result.getClass();
-                if (BaseType.is(rclass)) {
-                    return result;
-                }
-                return new String(ProviderServer.this.serializerManger.getSerializer("json").serialize(result), StandardCharsets.UTF_8);
-            }
-
-            @SuppressWarnings("all")
-            private Object[] resovleMethodParams(Request request, Class<?>[] paramsType) {
-                Object[] params = request.getParams();
-                Object[] result = new Object[params.length];
-                for (int i = 0; i < params.length; i++) {
-                    Class<?> paramType = paramsType[i];
-                    if(BaseType.is(paramType)){
-                        result[i] = params[i];
-                        continue;
-                    }
-                    result[i] = serializerManger.getSerializer("json").deserialize(params[i].toString().getBytes(StandardCharsets.UTF_8),paramType);
-                }
-                return result;
-            }
-
-            private Class<?>[] resolveMethodParams(Request request) throws ClassNotFoundException {
-                if (!request.isGenericInvoke()) {
-                    return request.getParamsType();
-                }
-                String[] paramsClassStr = request.getParamsTypeStr();
-                Class<?>[] paramsClass = new Class<?>[paramsClassStr.length];
-                for (int i = 0; i < paramsClassStr.length; i++) {
-                    String classStr = paramsClassStr[i];
-                    paramsClass[i] = analysisFromString(classStr);
-                }
-                return paramsClass;
-            }
-
-            private Class<?> analysisFromString(String classStr) throws ClassNotFoundException {
-                // 首先尝试从基础类型中查找
-                Class<?> baseType = BaseType.getClass(classStr);
-                if (baseType != null) {
-                    return baseType;
-                }
-                // 如果不是基础类型，则使用 Class.forName 加载
-                return Class.forName(classStr);
             }
         }
 

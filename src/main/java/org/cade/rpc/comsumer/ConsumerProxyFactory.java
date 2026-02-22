@@ -73,7 +73,11 @@ public class ConsumerProxyFactory {
 
 
     public <I> I getConsumerProxy(Class<I> interfaceClass) {
-        return (I) Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(), new Class<?>[]{interfaceClass}, new ConsumerInvocationHandler<>(interfaceClass, createLoadBalancer(), createRetryPolicy(properties.getRetryPolicy())));
+        return getConsumerProxy(interfaceClass, new org.cade.rpc.interceptor.InterceptorConfig());
+    }
+
+    public <I> I getConsumerProxy(Class<I> interfaceClass, org.cade.rpc.interceptor.InterceptorConfig config) {
+        return (I) Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(), new Class<?>[]{interfaceClass}, new ConsumerInvocationHandler<>(interfaceClass, createLoadBalancer(), createRetryPolicy(properties.getRetryPolicy()), config));
     }
 
     private RetryPolicy createRetryPolicy(String retryPolicyName) {
@@ -88,11 +92,13 @@ public class ConsumerProxyFactory {
         private final Class<I> interfaceClass;
         private final LoadBalancer loadBalancer;
         private final RetryPolicy retryPolicy;
+        private final org.cade.rpc.interceptor.InterceptorConfig interceptorConfig;
 
-        ConsumerInvocationHandler(Class<I> interfaceClass, LoadBalancer loadBalancer, RetryPolicy retryPolicy) {
+        ConsumerInvocationHandler(Class<I> interfaceClass, LoadBalancer loadBalancer, RetryPolicy retryPolicy, org.cade.rpc.interceptor.InterceptorConfig config) {
             this.interfaceClass = interfaceClass;
             this.loadBalancer = loadBalancer;
             this.retryPolicy = retryPolicy;
+            this.interceptorConfig = config;
         }
 
         @Override
@@ -100,6 +106,43 @@ public class ConsumerProxyFactory {
             if (method.getDeclaringClass() == Object.class) {
                 return invokeObjectMethod(proxy, method, args);
             }
+
+            // 获取预编译的拦截器链
+            org.cade.rpc.interceptor.InterceptorChain chain = interceptorConfig.getChain(method);
+
+            if (chain.isEmpty()) {
+                // 快速路径：无拦截器，使用现有逻辑
+                return invokeRPC(method, args);
+            }
+
+            // 构建调用上下文
+            org.cade.rpc.interceptor.InvocationContext context = org.cade.rpc.interceptor.InvocationContext.builder()
+                    .serviceName(interfaceClass.getName())
+                    .methodName(method.getName())
+                    .method(method)
+                    .parameterTypes(method.getParameterTypes())
+                    .arguments(args)
+                    .traceID(TraceContext.getOrCreate())
+                    .build();
+
+            // 在 RPC 调用周围执行拦截器链
+            try {
+                return chain.execute(context, () -> {
+                    try {
+                        return invokeRPC(method, args);
+                    } catch (Throwable e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+            } catch (Exception e) {
+                if (e.getCause() != null && e.getCause() instanceof RuntimeException) {
+                    throw e.getCause();
+                }
+                throw e;
+            }
+        }
+
+        private Object invokeRPC(Method method, Object[] args) throws Throwable {
             boolean genericInvoke = isGenericInvoke(method);
             String serviceName = genericInvoke?args[0].toString() : interfaceClass.getName();
 
@@ -245,15 +288,7 @@ public class ConsumerProxyFactory {
         }
 
         private Object[] prepareRequestParams(Object[] requestParams, String[] requestParamsType) {
-            Object[] res = new Object[requestParams.length];
-            for(int i=0;i<requestParams.length;i++) {
-                if(BaseType.is(requestParamsType[i])){
-                    res[i] = requestParams[i];
-                    continue;
-                }
-                res[i] = requestParams[i];
-            }
-            return res;
+            return requestParams;
         }
 
         private Object[] prepareRequestParams(Object[] requestParams, Class<?>[] requestParamsType) {
