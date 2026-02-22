@@ -1,6 +1,5 @@
 package org.cade.rpc.provider;
 
-import com.alibaba.fastjson2.JSONObject;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -23,10 +22,10 @@ import org.cade.rpc.register.DefaultServiceRegister;
 import org.cade.rpc.register.Metadata;
 import org.cade.rpc.register.ServiceRegister;
 import org.cade.rpc.serialize.SerializerManager;
+import org.cade.rpc.trace.TraceContext;
 import org.cade.rpc.utils.BaseType;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -210,18 +209,42 @@ public class ProviderServer {
             @Override
             public void run() {
                 EventLoop eventLoop = ctx.channel().eventLoop();
+
+                // 初始化 TraceContext
+                String traceId = request.getTraceId();
+                if (traceId == null || traceId.isEmpty()) {
+                    // 如果请求中没有 traceId，生成一个新的
+                    traceId = TraceContext.start();
+                    log.debug("Generated new traceId: {}", traceId);
+                } else {
+                    // 使用请求中的 traceId
+                    TraceContext.setTraceId(traceId);
+                    log.debug("Inherited traceId: {}", traceId);
+                }
+
                 try {
                     Class<?>[] paramsClass = resolveMethodParams(request);
                     Object result = invocation.invoke(request.getMethodName(), paramsClass, resovleMethodParams(request,paramsClass));
                     log.info("Request:{} result:{}", request, result);
-                    Object finnalResult = resovleResult(result);
-                    eventLoop.execute(() -> ctx.writeAndFlush(Response.ok(finnalResult, request.getRequestID())));
+                    Object finnalResult = resolveResult(result);
+
+                    // 创建响应并设置 traceId
+                    Response response = Response.ok(finnalResult, request.getRequestID());
+                    response.setTraceId(traceId);
+                    eventLoop.execute(() -> ctx.writeAndFlush(response));
                 } catch (Exception e) {
-                    eventLoop.execute(() -> ctx.writeAndFlush(Response.error(String.format("Call Function Fail err:%s", e), request.getRequestID())));
+                    log.error("Request processing failed", e);
+                    // 创建错误响应并设置 traceId
+                    Response errorResponse = Response.error(String.format("Call Function Fail err:%s", e), request.getRequestID());
+                    errorResponse.setTraceId(traceId);
+                    eventLoop.execute(() -> ctx.writeAndFlush(errorResponse));
+                } finally {
+                    // 清理 TraceContext，防止 ThreadLocal 内存泄漏
+                    TraceContext.clear();
                 }
             }
 
-            private Object resovleResult(Object result) {
+            private Object resolveResult(Object result) {
                 Class<?> rclass = result.getClass();
                 if (BaseType.is(rclass)) {
                     return result;

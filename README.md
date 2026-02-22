@@ -113,7 +113,7 @@ public class ProviderApp {
 
 **启动命令：**
 ```bash
-mvn exec:java -Dexec.mainClass="org.cade.rpc.provider.ProviderApp"
+mvn exec:java -Dexec.mainClass="demo.ProviderApp"
 ```
 
 ### 4. 启动服务消费者 (Consumer)
@@ -145,7 +145,7 @@ public class ConsuerApp {
 
 **启动命令：**
 ```bash
-mvn exec:java -Dexec.mainClass="org.cade.rpc.comsumer.ConsuerApp"
+mvn exec:java -Dexec.mainClass="demo.ConsuerApp"
 ```
 
 ---

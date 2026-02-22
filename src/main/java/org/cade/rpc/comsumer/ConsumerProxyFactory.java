@@ -20,6 +20,7 @@ import org.cade.rpc.register.ServiceRegister;
 import org.cade.rpc.retry.*;
 import org.cade.rpc.serialize.JSONSerializer;
 import org.cade.rpc.serialize.Serializer;
+import org.cade.rpc.trace.TraceContext;
 import org.cade.rpc.utils.BaseType;
 import org.checkerframework.checker.nullness.qual.NonNull;
 
@@ -48,7 +49,7 @@ public class ConsumerProxyFactory {
     private final Serializer jsonSerializer;
 
 
-    ConsumerProxyFactory(ConsumerProperties properties) throws Exception {
+    public ConsumerProxyFactory(ConsumerProperties properties) throws Exception {
         this.jsonSerializer = new JSONSerializer();
         this.inflightRequestManager = new InflightRequestManager(properties);
         this.retryManager = new RetryManager();
@@ -221,6 +222,9 @@ public class ConsumerProxyFactory {
             boolean genericInvoke = isGenericInvoke(method);
             Request request = new Request();
 
+            // 设置 TraceID（从 TraceContext 获取或生成新的）
+            String traceId = TraceContext.getOrCreate();
+            request.setTraceId(traceId);
 
             if (genericInvoke) {
                 request.setGenericInvoke(true);
