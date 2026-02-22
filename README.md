@@ -72,7 +72,7 @@ public interface Add {
 ```java
 package org.cade.rpc.provider;
 
-import org.cade.rpc.api.Add;
+import demo.api.Add;
 
 public class AddImpl implements Add {
     @Override
@@ -87,7 +87,8 @@ public class AddImpl implements Add {
 ```java
 package org.cade.rpc.provider;
 
-import org.cade.rpc.api.Add;
+import demo.api.Add;
+import demo.api.AddImpl;
 
 public class ProviderApp {
     public static void main(String[] args) throws Exception {
@@ -113,7 +114,7 @@ public class ProviderApp {
 
 **启动命令：**
 ```bash
-mvn exec:java -Dexec.mainClass="org.cade.rpc.provider.ProviderApp"
+mvn exec:java -Dexec.mainClass="demo.ProviderApp"
 ```
 
 ### 4. 启动服务消费者 (Consumer)
@@ -121,7 +122,7 @@ mvn exec:java -Dexec.mainClass="org.cade.rpc.provider.ProviderApp"
 ```java
 package org.cade.rpc.comsumer;
 
-import org.cade.rpc.api.Add;
+import demo.api.Add;
 
 public class ConsuerApp {
     public static void main(String[] args) throws Exception {
@@ -145,7 +146,7 @@ public class ConsuerApp {
 
 **启动命令：**
 ```bash
-mvn exec:java -Dexec.mainClass="org.cade.rpc.comsumer.ConsuerApp"
+mvn exec:java -Dexec.mainClass="demo.ConsuerApp"
 ```
 
 ---

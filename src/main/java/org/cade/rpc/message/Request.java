@@ -17,4 +17,9 @@ public class Request implements Serializable {
     private Object[] params;
     private String returnTypeStr;
     private int requestID = idGenerator.getAndIncrement();
+
+    /**
+     * 分布式链路追踪 ID
+     */
+    private String traceId;
 }

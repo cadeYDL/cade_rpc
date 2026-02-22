@@ -21,10 +21,10 @@ This is a client-server RPC system. Run the provider (server) first, then the co
 
 ```bash
 # Run provider server (listens on port 10086)
-mvn exec:java -Dexec.mainClass="org.cade.rpc.provider.ProviderApp"
+mvn exec:java -Dexec.mainClass="demo.ProviderApp"
 
 # Run consumer client (in a separate terminal)
-mvn exec:java -Dexec.mainClass="org.cade.rpc.comsumer.ConsuerApp"
+mvn exec:java -Dexec.mainClass="demo.ConsuerApp"
 ```
 
 ## Architecture

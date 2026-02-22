@@ -1,4 +1,4 @@
-package org.cade.rpc.api;
+package demo.api;
 
 import org.cade.rpc.fallback.RPCFallback;
 

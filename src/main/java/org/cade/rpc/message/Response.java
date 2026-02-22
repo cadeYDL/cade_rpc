@@ -11,6 +11,11 @@ public class Response implements Serializable {
     private String message;
     private int RequestId;
 
+    /**
+     * 分布式链路追踪 ID
+     */
+    private String traceId;
+
     public static Response ok(Object result, int RequestId) {
         Response response = new Response();
         response.setCode(0);
@@ -19,7 +24,7 @@ public class Response implements Serializable {
         return response;
     }
 
-    public static Response error(String message,int RequestId) {
+    public static Response error(String message, int RequestId) {
         Response response = new Response();
         response.setCode(-1);
         response.setMessage(message);

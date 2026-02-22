@@ -1,9 +1,10 @@
-package org.cade.rpc.comsumer;
+package demo;
 
-import org.cade.rpc.api.Add;
-import org.cade.rpc.api.User;
-import org.cade.rpc.register.RegistryConfig;
-import org.cade.rpc.register.impl.ZookeeperServiceRegister;
+import demo.api.Add;
+import demo.api.User;
+import org.cade.rpc.comsumer.ConsumerProperties;
+import org.cade.rpc.comsumer.ConsumerProxyFactory;
+import org.cade.rpc.comsumer.GenericConsumer;
 import org.cade.rpc.serialize.JSONSerializer;
 import org.cade.rpc.serialize.Serializer;
 
@@ -36,8 +37,10 @@ public class ConsuerApp  {
         Serializer serializer = new JSONSerializer();
         String u1str = new String(serializer.serialize(u1), StandardCharsets.UTF_8);
         String u2str = new String(serializer.serialize(u2), StandardCharsets.UTF_8);
-        obj =  consumer.$invoke(Add.class.getName(),"addUser",new String[]{"org.cade.rpc.api.User","org.cade.rpc.api.User"},new Object[]{u1str,u2str});
+        obj =  consumer.$invoke(Add.class.getName(),"addUser",new String[]{"demo.api.User","demo.api.User"},new Object[]{u1str,u2str});
         System.out.println(obj);
+
+
 
     }
 

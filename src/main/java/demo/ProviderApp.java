@@ -1,7 +1,9 @@
-package org.cade.rpc.provider;
+package demo;
 
-import org.cade.rpc.api.Add;
-import org.cade.rpc.register.RegistryConfig;
+import demo.api.Add;
+import demo.api.AddImpl;
+import org.cade.rpc.provider.ProviderProperties;
+import org.cade.rpc.provider.ProviderServer;
 
 
 public class ProviderApp {
