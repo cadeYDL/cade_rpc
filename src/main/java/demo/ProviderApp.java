@@ -27,11 +27,10 @@ public class ProviderApp {
         InterceptorConfig config = new InterceptorConfig();
 
         // 添加接口级拦截器（应用于所有方法）
-        config.addInterfaceInterceptor(new LoggingInterceptor());
-        config.addInterfaceInterceptor(new MetricsInterceptor());
+//        config.addInterfaceInterceptor(new LoggingInterceptor());
 
         // 添加方法级拦截器（仅应用于特定方法）
-        config.addMethodInterceptor("add", new PermissionInterceptor());
+//        config.addMethodInterceptor("add", new PermissionInterceptor());
 
         // 使用拦截器注册
         p.register(Add.class, new AddImpl(), config);

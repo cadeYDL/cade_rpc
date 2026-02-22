@@ -2,6 +2,7 @@ package org.cade.rpc.interceptor;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -107,10 +108,10 @@ public class InterceptorConfig {
     private InterceptorChain buildChain(Method method) {
         List<Interceptor> combined = new ArrayList<>();
 
-        // Add interface-level interceptors
+        // 添加接口级别拦截器
         combined.addAll(interfaceInterceptors);
 
-        // Add method-level interceptors
+        // 添加方法级别拦截器
         List<Interceptor> methodLevel = methodInterceptors.get(method.getName());
         if (methodLevel != null) {
             combined.addAll(methodLevel);
@@ -186,5 +187,23 @@ public class InterceptorConfig {
                 ", methodInterceptors=" + methodInterceptors.size() +
                 ", cachedChains=" + chainCache.size() +
                 '}';
+    }
+
+    /**
+     * 获取接口级别拦截器的不可修改视图。
+     *
+     * @return 拦截器的不可修改列表。
+     */
+    public List<Interceptor> getInterfaceInterceptors() {
+        return Collections.unmodifiableList(interfaceInterceptors);
+    }
+
+    /**
+     * 获取方法级别拦截器的不可修改视图。
+     *
+     * @return 方法拦截器的不可修改映射。
+     */
+    public Map<String, List<Interceptor>> getMethodInterceptors() {
+        return Collections.unmodifiableMap(methodInterceptors);
     }
 }

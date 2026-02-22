@@ -52,6 +52,15 @@ public class ProviderServer {
         registry.register(interfaceClass, serviceInstance, config);
     }
 
+    /**
+     * 添加一个提供者端的全局拦截器。
+     *
+     * @param interceptor 要添加的全局拦截器。
+     */
+    public void addGlobalInterceptor(org.cade.rpc.interceptor.Interceptor interceptor) {
+        registry.addGlobalInterceptor(interceptor);
+    }
+
 
     public ProviderServer(ProviderProperties properties) throws Exception {
         this.properties = properties;

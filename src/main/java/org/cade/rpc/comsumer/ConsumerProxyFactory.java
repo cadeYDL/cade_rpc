@@ -9,6 +9,12 @@ import org.cade.rpc.fallback.CacheFallback;
 import org.cade.rpc.fallback.DefaultFallback;
 import org.cade.rpc.fallback.Fallback;
 import org.cade.rpc.fallback.MockFallback;
+import org.cade.rpc.interceptor.InterceptorConfig;
+import org.cade.rpc.interceptor.Interceptor; // 需要引入
+import org.cade.rpc.interceptor.InterceptorAnnotationUtil; // 需要引入
+import org.cade.rpc.interceptor.InterceptorChain; // 需要引入
+import org.cade.rpc.interceptor.InvocationContext; // 需要引入
+
 import org.cade.rpc.loadbalance.LoadBalancer;
 import org.cade.rpc.loadbalance.LoadBalancerManager;
 import org.cade.rpc.message.Request;
@@ -30,6 +36,9 @@ import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map; // 需要引入
+import java.util.concurrent.ConcurrentHashMap; // 需要引入
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.*;
 
 // 感觉ConsumerProxyFactory中的inFlightRequestTable和ConnectionManager应该交由外部去维护
@@ -47,6 +56,34 @@ public class ConsumerProxyFactory {
     private final RetryManager retryManager;
     private final LoadBalancerManager loadBalancerManager;
     private final Serializer jsonSerializer;
+    private final List<org.cade.rpc.interceptor.Interceptor> globalInterceptors = new CopyOnWriteArrayList<>();
+
+    // 需要一个地方存储所有 ConsumerInvocationHandler 实例，以便在 addGlobalInterceptor 时清除它们的缓存
+    // 这里使用 Map 来存储，key 可以是 interfaceClass，value 可以是 WeakReference 列表，防止内存泄漏
+    private final Map<Class<?>, List<java.lang.ref.WeakReference<ConsumerInvocationHandler<?>>>> invocationHandlers = new ConcurrentHashMap<>();
+
+
+    /**
+     * 添加一个消费者端的全局拦截器。
+     *
+     * @param interceptor 要添加的全局拦截器。
+     */
+    public void addGlobalInterceptor(org.cade.rpc.interceptor.Interceptor interceptor) {
+        if (interceptor == null) {
+            throw new IllegalArgumentException("全局拦截器不能为null");
+        }
+        // 避免重复添加同一个实例
+        if (!this.globalInterceptors.contains(interceptor)) {
+            this.globalInterceptors.add(interceptor);
+            // 清除所有已创建的代理实例的拦截器链缓存
+            invocationHandlers.values().forEach(list -> list.forEach(ref -> {
+                ConsumerInvocationHandler<?> handler = ref.get();
+                if (handler != null) {
+                    handler.clearChainCache();
+                }
+            }));
+        }
+    }
 
 
     public ConsumerProxyFactory(ConsumerProperties properties) throws Exception {
@@ -73,11 +110,26 @@ public class ConsumerProxyFactory {
 
 
     public <I> I getConsumerProxy(Class<I> interfaceClass) {
-        return getConsumerProxy(interfaceClass, new org.cade.rpc.interceptor.InterceptorConfig());
+        return getConsumerProxy(interfaceClass, new InterceptorConfig());
     }
 
-    public <I> I getConsumerProxy(Class<I> interfaceClass, org.cade.rpc.interceptor.InterceptorConfig config) {
-        return (I) Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(), new Class<?>[]{interfaceClass}, new ConsumerInvocationHandler<>(interfaceClass, createLoadBalancer(), createRetryPolicy(properties.getRetryPolicy()), config));
+    public <I> I getConsumerProxy(Class<I> interfaceClass, InterceptorConfig programmaticConfig) {
+        // 1. 从接口中解析注解
+        org.cade.rpc.interceptor.InterceptorConfig annotationConfig = org.cade.rpc.interceptor.InterceptorAnnotationUtil.parseAnnotations(interfaceClass);
+
+        // 2. 合并编程式和基于注解的配置
+        org.cade.rpc.interceptor.InterceptorConfig mergedConfig = org.cade.rpc.interceptor.InterceptorAnnotationUtil.merge(programmaticConfig, annotationConfig);
+
+        // 3. 使用合并后的配置创建代理 (不再合并全局)
+        ConsumerInvocationHandler<I> handler = new ConsumerInvocationHandler<>(interfaceClass, createLoadBalancer(), createRetryPolicy(properties.getRetryPolicy()), mergedConfig);
+        
+        // 注册 handler 以便在全局拦截器变化时清除缓存
+        invocationHandlers.computeIfAbsent(interfaceClass, k -> new CopyOnWriteArrayList<>())
+                          .add(new java.lang.ref.WeakReference<>(handler));
+
+        return (I) Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(),
+                new Class<?>[]{interfaceClass},
+                handler);
     }
 
     private RetryPolicy createRetryPolicy(String retryPolicyName) {
@@ -93,6 +145,8 @@ public class ConsumerProxyFactory {
         private final LoadBalancer loadBalancer;
         private final RetryPolicy retryPolicy;
         private final org.cade.rpc.interceptor.InterceptorConfig interceptorConfig;
+        private final Map<Method, InterceptorChain> chainCache = new ConcurrentHashMap<>(); // 新增缓存字段
+
 
         ConsumerInvocationHandler(Class<I> interfaceClass, LoadBalancer loadBalancer, RetryPolicy retryPolicy, org.cade.rpc.interceptor.InterceptorConfig config) {
             this.interfaceClass = interfaceClass;
@@ -101,14 +155,34 @@ public class ConsumerProxyFactory {
             this.interceptorConfig = config;
         }
 
+        // 新增方法：清除缓存
+        public void clearChainCache() {
+            this.chainCache.clear();
+        }
+
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
             if (method.getDeclaringClass() == Object.class) {
                 return invokeObjectMethod(proxy, method, args);
             }
 
-            // 获取预编译的拦截器链
-            org.cade.rpc.interceptor.InterceptorChain chain = interceptorConfig.getChain(method);
+            // 尝试从缓存中获取拦截器链
+            InterceptorChain chain = chainCache.get(method);
+
+            if (chain == null) {
+                // 如果缓存中没有，则创建并缓存
+                // 1. 创建临时的全局配置
+                org.cade.rpc.interceptor.InterceptorConfig globalConfig = new org.cade.rpc.interceptor.InterceptorConfig();
+                globalInterceptors.forEach(globalConfig::addInterfaceInterceptor); // 使用外部类的 globalInterceptors
+
+                // 2. 合并全局配置和服务特定配置
+                org.cade.rpc.interceptor.InterceptorConfig finalConfig = org.cade.rpc.interceptor.InterceptorAnnotationUtil.merge(globalConfig, this.interceptorConfig);
+
+                // 3. 获取最终的拦截器链
+                chain = finalConfig.getChain(method);
+                chainCache.put(method, chain); // 存入缓存
+            }
+
 
             if (chain.isEmpty()) {
                 // 快速路径：无拦截器，使用现有逻辑
